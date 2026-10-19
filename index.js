@@ -1,11 +1,4 @@
-
-/* =========================================================
-   GAME NOTE - index.js
-   FreeToGame API + Discover + Details + My Library
-   ========================================================= */
-
-const API = "https://www.freetogame.com/api";
-const STORAGE_KEY = "gameNoteLibraryV1";
+const API_BASE = "https://api.rawg.io/api";
 
 const nav = document.querySelector(".nav");
 const navButtons = document.querySelectorAll(".nav-btn");
@@ -14,161 +7,163 @@ const gamesGrid = document.querySelector("#games-grid");
 const searchBar = document.querySelector("#search-bar");
 const addButton = document.querySelector("#add-btn");
 
-const genreFilter = document.querySelector("#genre-filter");
-const platformFilter = document.querySelector("#platform-filter");
-const ratingFilter = document.querySelector("#rating-filter");
-const sortSelect = document.querySelector("#sort");
+const STORAGE_KEY = "gameNoteSavedGames";
 
-const DEFAULT_LISTS = [
-    { id: "plan", name: "Plan to Play", builtIn: true },
-    { id: "completed", name: "Completed", builtIn: true },
-    { id: "favorites", name: "Favorites", builtIn: true }
-];
+const pageTitles = {
+    discover: "Discover",
+    plan: "Your Plan",
+    completed: "Completed"
+};
 
-let catalog = [];
 let currentPage = "discover";
 let currentView = "grid";
-let activeListId = null;
-let lastSearch = "";
-let requestId = 0;
-let searchTimer = null;
+let searchTimer;
+let requestNumber = 0;
 
-/* ---------- 1. HELPERS ---------- */
+/* ---------- 1. SAFE TEXT HELPERS ---------- */
 
 function escapeHTML(value = "") {
-    return String(value).replace(/[&<>"']/g, char => ({
+    return String(value).replace(/[&<>"']/g, character => ({
         "&": "&amp;",
         "<": "&lt;",
         ">": "&gt;",
         '"': "&quot;",
         "'": "&#39;"
-    })[char]);
+    })[character]);
 }
 
-function getLibrary() {
-    try {
-        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+function cleanDescription(html = "") {
+    const documentCopy = new DOMParser().parseFromString(
+        html,
+        "text/html"
+    );
 
-        if (
-            saved &&
-            Array.isArray(saved.lists) &&
-            saved.memberships &&
-            saved.games
-        ) {
-            return saved;
-        }
-    } catch (error) {
-        console.warn("Could not read saved library:", error);
+    return documentCopy.body.textContent.trim();
+}
+
+/* ---------- 2. API KEY AND REQUESTS ---------- */
+
+function getApiKey() {
+    const key = window.RAWG_API_KEY;
+
+    if (!key || key === "PASTE_YOUR_RAWG_API_KEY_HERE") {
+        throw new Error(
+            "Add your RAWG API key to config.js first."
+        );
     }
 
-    return {
-        lists: DEFAULT_LISTS.map(list => ({ ...list })),
-        games: {},
-        memberships: {
-            plan: [],
-            completed: [],
-            favorites: []
+    return key;
+}
+
+async function fetchRAWG(endpoint, params = {}) {
+    const url = new URL(`${API_BASE}/${endpoint}`);
+
+    url.searchParams.set("key", getApiKey());
+
+    Object.entries(params).forEach(([name, value]) => {
+        if (value !== undefined && value !== null && value !== "") {
+            url.searchParams.set(name, value);
         }
-    };
-}
+    });
 
-function saveLibrary(library) {
-    try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(library));
-        return true;
-    } catch (error) {
-        showNotice("Couldn't save your library. Browser storage may be full.");
-        console.error(error);
-        return false;
+    const response = await fetch(url);
+
+    if (response.status === 401 || response.status === 403) {
+        throw new Error(
+            "RAWG rejected the request. Check your API key."
+        );
     }
-}
 
-function getList(id) {
-    return getLibrary().lists.find(list => list.id === id);
-}
-
-function getListGames(listId) {
-    const library = getLibrary();
-    const ids = library.memberships[listId] || [];
-
-    return ids
-        .map(id => library.games[String(id)])
-        .filter(Boolean);
-}
-
-function cleanText(html = "") {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    return doc.body.textContent.trim();
-}
-
-function getGenreNames(game) {
-    if (Array.isArray(game.genre)) return game.genre;
-    if (typeof game.genre === "string") return [game.genre];
-    return [];
-}
-
-function getPlatformName(game) {
-    return String(game.platform || "");
-}
-
-/* ---------- 2. API ---------- */
-
-async function apiRequest(endpoint) {
-    const response = await fetch(`${API}/${endpoint}`);
+    if (response.status === 429) {
+        throw new Error(
+            "RAWG request limit reached. Please try again later."
+        );
+    }
 
     if (!response.ok) {
-        if (response.status === 404) {
-            throw new Error("The requested game was not found.");
-        }
-
-        if (response.status === 429) {
-            throw new Error("Too many requests. Wait a little and try again.");
-        }
-
-        throw new Error(`The game service returned error ${response.status}.`);
+        throw new Error(
+            `RAWG request failed (${response.status}).`
+        );
     }
 
     return response.json();
 }
 
-async function loadCatalog() {
-    if (catalog.length) return catalog;
+/* ---------- 3. LOCAL STORAGE ---------- */
 
-    showLoading("Loading the game catalog...");
-
+function getSavedGames() {
     try {
-        const games = await apiRequest("games");
-
-        if (!Array.isArray(games)) {
-            throw new Error("The API returned an unexpected response.");
-        }
-
-        catalog = games;
-        populateFilters();
-        return catalog;
-    } catch (error) {
-        showMessage(
-            "Couldn't load games",
-            `${error.message} Check your connection and try again.`,
-            true
+        const saved = JSON.parse(
+            localStorage.getItem(STORAGE_KEY) || "[]"
         );
 
-        throw error;
+        return Array.isArray(saved) ? saved : [];
+    } catch {
+        return [];
     }
 }
 
-async function getGameDetails(id) {
-    return apiRequest(`game?id=${encodeURIComponent(id)}`);
+function saveGames(games) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(games));
 }
 
-/* ---------- 3. NOTICES AND STATES ---------- */
+function addGameToPlan(game) {
+    const savedGames = getSavedGames();
+    const existing = savedGames.find(
+        item => String(item.id) === String(game.id)
+    );
+
+    if (existing) {
+        if (existing.status === "completed") {
+            existing.status = "plan";
+            saveGames(savedGames);
+            showNotice("Moved back to Your Plan.");
+        } else {
+            showNotice("This game is already in Your Plan.");
+        }
+
+        return;
+    }
+
+    savedGames.push({
+        id: game.id,
+        name: game.name,
+        background_image: game.background_image || "",
+        released: game.released || "",
+        rating: game.rating || 0,
+        genres: game.genres || [],
+        platforms: game.platforms || [],
+        status: "plan",
+        addedAt: Date.now()
+    });
+
+    saveGames(savedGames);
+    showNotice(`${game.name} added to Your Plan.`);
+}
+
+function changeGameStatus(id, status) {
+    const savedGames = getSavedGames();
+
+    const game = savedGames.find(
+        item => String(item.id) === String(id)
+    );
+
+    if (!game) return;
+
+    game.status = status;
+    saveGames(savedGames);
+
+    renderCurrentPage();
+}
+
+/* ---------- 4. NOTIFICATIONS ---------- */
 
 function showNotice(message) {
-    let notice = document.querySelector("#gn-notice");
+    let notice = document.querySelector("#game-note-notice");
 
     if (!notice) {
         notice = document.createElement("div");
-        notice.id = "gn-notice";
+        notice.id = "game-note-notice";
         notice.className = "gn-notice";
         notice.setAttribute("role", "status");
         document.body.appendChild(notice);
@@ -177,21 +172,14 @@ function showNotice(message) {
     notice.textContent = message;
     notice.classList.add("is-visible");
 
-    clearTimeout(notice.timer);
+    clearTimeout(notice.hideTimer);
 
-    notice.timer = setTimeout(() => {
+    notice.hideTimer = setTimeout(() => {
         notice.classList.remove("is-visible");
     }, 2600);
 }
 
-function showLoading(message = "Loading...") {
-    gamesGrid.innerHTML = `
-        <div class="gn-message">
-            <span class="gn-spinner"></span>
-            <p>${escapeHTML(message)}</p>
-        </div>
-    `;
-}
+/* ---------- 5. LOADING AND ERROR STATES ---------- */
 
 function showMessage(title, message, retry = false) {
     gamesGrid.innerHTML = `
@@ -207,137 +195,68 @@ function showMessage(title, message, retry = false) {
     `;
 }
 
-/* ---------- 4. FILTER OPTIONS ---------- */
-
-function populateFilters() {
-    if (genreFilter) {
-        const genres = [...new Set(
-            catalog.map(game => game.genre).filter(Boolean)
-        )].sort((a, b) => a.localeCompare(b));
-
-        genreFilter.innerHTML =
-            '<option value="">All genres</option>' +
-            genres.map(genre =>
-                `<option value="${escapeHTML(genre)}">${escapeHTML(genre)}</option>`
-            ).join("");
-    }
-
-    if (platformFilter) {
-        platformFilter.innerHTML = `
-            <option value="">All platforms</option>
-            <option value="pc">PC</option>
-            <option value="browser">Browser</option>
-        `;
-    }
-
-    if (ratingFilter) {
-        ratingFilter.innerHTML = `
-            <option value="">Any minimum score</option>
-            <option value="4">4+ rating</option>
-            <option value="3">3+ rating</option>
-            <option value="2">2+ rating</option>
-        `;
-    }
-
-    if (sortSelect) {
-        sortSelect.innerHTML = `
-            <option value="popular">Popularity</option>
-            <option value="alphabetical">Alphabetical</option>
-            <option value="release-date">Release date</option>
-        `;
-    }
-}
-
-function resetFilters() {
-    if (searchBar) searchBar.value = "";
-    if (genreFilter) genreFilter.value = "";
-    if (platformFilter) platformFilter.value = "";
-    if (ratingFilter) ratingFilter.value = "";
-    if (sortSelect) sortSelect.value = "popular";
-}
-
-/* ---------- 5. SEARCH AND FILTER ---------- */
-
-function getFilteredCatalog() {
-    const query = (searchBar?.value || "").trim().toLowerCase();
-    const genre = genreFilter?.value || "";
-    const platform = platformFilter?.value || "";
-    const minRating = Number(ratingFilter?.value || 0);
-    const sort = sortSelect?.value || "popular";
-
-    let results = catalog.filter(game => {
-        const title = String(game.title || "").toLowerCase();
-        const description = String(game.short_description || "").toLowerCase();
-
-        const matchesSearch =
-            !query || title.includes(query) || description.includes(query);
-
-        const matchesGenre = !genre || game.genre === genre;
-
-        const platformText = getPlatformName(game).toLowerCase();
-        const matchesPlatform = !platform ||
-            platformText.includes(platform);
-
-        const rating = Number(game.rating || 0);
-        const matchesRating = !minRating || rating >= minRating;
-
-        return matchesSearch &&
-            matchesGenre &&
-            matchesPlatform &&
-            matchesRating;
-    });
-
-    if (sort === "alphabetical") {
-        results.sort((a, b) => a.title.localeCompare(b.title));
-    } else if (sort === "release-date") {
-        results.sort((a, b) =>
-            String(b.release_date || "").localeCompare(String(a.release_date || ""))
-        );
-    } else {
-        results.sort((a, b) =>
-            Number(b.rating || 0) - Number(a.rating || 0)
-        );
-    }
-
-    return results;
+function showLoading() {
+    gamesGrid.innerHTML = `
+        <div class="gn-loading">
+            <span class="gn-spinner"></span>
+            <p>Loading games...</p>
+        </div>
+    `;
 }
 
 /* ---------- 6. GAME CARDS ---------- */
 
-function renderGameCards(games, context = "discover") {
+function renderGameCards(games, mode = "discover") {
     if (!games.length) {
         showMessage(
-            "No games found",
-            context === "discover"
-                ? "Try a different search or adjust your filters."
-                : "This list is empty. Find a game in Discover and add it here."
+            "Nothing here yet",
+            mode === "discover"
+                ? "Try another search."
+                : "Games you add will appear here."
         );
         return;
     }
 
     gamesGrid.innerHTML = games.map(game => {
-        const id = String(game.id);
-        const title = game.title || game.name || "Untitled game";
-        const image = game.thumbnail || game.background_image || "";
-        const genre = getGenreNames(game).join(", ") || "Genre unknown";
-        const release = game.release_date || game.released || "Release date unknown";
+        const genres = (game.genres || [])
+            .map(genre => genre.name || genre)
+            .filter(Boolean)
+            .slice(0, 2)
+            .join(" · ");
+
+        const platforms = (game.platforms || [])
+            .map(item => item.platform?.name || item.name || item)
+            .filter(Boolean)
+            .slice(0, 2)
+            .join(" · ");
+
+        const image = game.background_image || "";
         const rating = Number(game.rating || 0);
+        const release = game.released || "Release date unknown";
 
-        let action = "";
+        let actionButton = "";
 
-        if (context === "list") {
-            action = `
-                <button class="gn-button gn-button-secondary"
-                    data-action="remove-from-list"
-                    data-id="${escapeHTML(id)}">
-                    Remove
+        if (mode === "plan") {
+            actionButton = `
+                <button class="gn-button"
+                    data-action="complete"
+                    data-id="${escapeHTML(game.id)}">
+                    Mark completed
+                </button>
+            `;
+        } else if (mode === "completed") {
+            actionButton = `
+                <button class="gn-button"
+                    data-action="move-to-plan"
+                    data-id="${escapeHTML(game.id)}">
+                    Move to Plan
                 </button>
             `;
         } else {
-            action = `
+            actionButton = `
                 <button class="gn-button gn-button-secondary"
-                    data-action="add-to-list"
-                    data-id="${escapeHTML(id)}">
+                    data-action="add"
+                    data-id="${escapeHTML(game.id)}">
                     + Add
                 </button>
             `;
@@ -347,21 +266,27 @@ function renderGameCards(games, context = "discover") {
             <article class="gn-game-card">
                 <button class="gn-cover-button"
                     data-action="details"
-                    data-id="${escapeHTML(id)}"
-                    aria-label="View ${escapeHTML(title)} details">
+                    data-id="${escapeHTML(game.id)}"
+                    aria-label="View ${escapeHTML(game.name)} details">
+
                     ${
                         image
                             ? `<img class="gn-cover"
                                 src="${escapeHTML(image)}"
-                                alt="${escapeHTML(title)} artwork"
+                                alt="${escapeHTML(game.name)} cover"
                                 loading="lazy">`
-                            : `<div class="gn-cover gn-no-cover">No cover available</div>`
+                            : `<div class="gn-cover gn-no-cover">
+                                No cover available
+                               </div>`
                     }
                 </button>
 
                 <div class="gn-card-content">
-                    <h3>${escapeHTML(title)}</h3>
-                    <p class="gn-muted">${escapeHTML(genre)}</p>
+                    <h3>${escapeHTML(game.name)}</h3>
+
+                    <p class="gn-muted">
+                        ${escapeHTML(genres || platforms || "Video game")}
+                    </p>
 
                     <div class="gn-card-meta">
                         <span>${escapeHTML(release)}</span>
@@ -371,10 +296,10 @@ function renderGameCards(games, context = "discover") {
                     <div class="gn-card-actions">
                         <button class="gn-button gn-button-secondary"
                             data-action="details"
-                            data-id="${escapeHTML(id)}">
+                            data-id="${escapeHTML(game.id)}">
                             Details
                         </button>
-                        ${action}
+                        ${actionButton}
                     </div>
                 </div>
             </article>
@@ -382,164 +307,71 @@ function renderGameCards(games, context = "discover") {
     }).join("");
 }
 
-/* ---------- 7. DISCOVER ---------- */
+/* ---------- 7. DISCOVER FROM RAWG ---------- */
 
-async function renderDiscover() {
-    currentPage = "discover";
+async function loadDiscover(query = "") {
+    const thisRequest = ++requestNumber;
+
     currentView = "grid";
-    activeListId = null;
-
-    const thisRequest = ++requestId;
+    showLoading();
 
     try {
-        await loadCatalog();
+        const data = await fetchRAWG("games", {
+            search: query.trim() || undefined,
+            page_size: 12,
+            ordering: query.trim() ? "-rating" : "-added"
+        });
 
-        if (thisRequest !== requestId) return;
+        if (thisRequest !== requestNumber) return;
 
-        renderGameCards(getFilteredCatalog(), "discover");
-    } catch {
-        // loadCatalog already displays an error message.
+        renderGameCards(data.results || [], "discover");
+    } catch (error) {
+        if (thisRequest !== requestNumber) return;
+
+        showMessage(
+            "Couldn't load games",
+            error.message,
+            true
+        );
     }
 }
 
-function applyFilters() {
-    if (currentPage !== "discover" || currentView !== "grid") return;
-
-    renderGameCards(getFilteredCatalog(), "discover");
-}
-
-[genreFilter, platformFilter, ratingFilter, sortSelect]
-    .filter(Boolean)
-    .forEach(control => {
-        control.addEventListener("change", applyFilters);
-    });
-
-if (searchBar) {
-    searchBar.addEventListener("input", () => {
-        if (currentPage !== "discover") {
-            changePage("discover");
-        }
-
-        clearTimeout(searchTimer);
-
-        searchTimer = setTimeout(() => {
-            if (currentPage === "discover" && currentView === "grid") {
-                applyFilters();
-            }
-        }, 180);
-    });
-}
-
-/* ---------- 8. SAVE A GAME AND ADD TO A LIST ---------- */
-
-function saveGameToList(game, listId) {
-    const library = getLibrary();
-    const id = String(game.id);
-
-    if (!library.lists.some(list => list.id === listId)) {
-        showNotice("That list no longer exists.");
-        return;
-    }
-
-    library.games[id] = {
-        ...library.games[id],
-        ...game,
-        id: game.id
-    };
-
-    if (!library.memberships[listId]) {
-        library.memberships[listId] = [];
-    }
-
-    if (library.memberships[listId].some(item => String(item) === id)) {
-        showNotice("This game is already in that list.");
-        return;
-    }
-
-    library.memberships[listId].push(game.id);
-
-    if (saveLibrary(library)) {
-        const list = library.lists.find(item => item.id === listId);
-        showNotice(`Added to ${list.name}.`);
-    }
-}
-
-function getGameFromCatalog(id) {
-    return catalog.find(game => String(game.id) === String(id));
-}
-
-async function openAddToList(id) {
-    let game = getGameFromCatalog(id);
-
-    if (!game) {
-        game = getLibrary().games[String(id)];
-    }
-
-    if (!game) {
-        try {
-            game = await getGameDetails(id);
-        } catch (error) {
-            showNotice(error.message);
-            return;
-        }
-    }
-
-    const lists = getLibrary().lists;
-
-    const options = lists.map(list => `
-        <button class="gn-list-option"
-            data-action="confirm-add"
-            data-id="${escapeHTML(id)}"
-            data-list-id="${escapeHTML(list.id)}">
-            <span>${escapeHTML(list.name)}</span>
-            <span>+</span>
-        </button>
-    `).join("");
-
-    gamesGrid.innerHTML = `
-        <section class="gn-list-picker">
-            <button class="gn-button gn-button-secondary"
-                data-action="back">
-                ← Back
-            </button>
-
-            <h2>Add ${escapeHTML(game.title || game.name)} to...</h2>
-            <p class="gn-muted">Choose one of your lists.</p>
-
-            <div class="gn-list-options">
-                ${options}
-            </div>
-
-            <button class="gn-button"
-                data-action="manage-lists">
-                Manage my lists
-            </button>
-        </section>
-    `;
-
-    currentView = "add-picker";
-}
-
-/* ---------- 9. GAME DETAILS ---------- */
+/* ---------- 8. GAME DETAILS ---------- */
 
 async function openGameDetails(id) {
-    const thisRequest = ++requestId;
+    const thisRequest = ++requestNumber;
 
     currentView = "details";
-    showLoading("Loading game details...");
+    showLoading();
 
     try {
-        const game = await getGameDetails(id);
+        const game = await fetchRAWG(`games/${encodeURIComponent(id)}`);
 
-        if (thisRequest !== requestId) return;
+        if (thisRequest !== requestNumber) return;
 
-        const description = cleanText(
-            game.description || game.short_description || ""
+        const genres = (game.genres || [])
+            .map(item => item.name)
+            .filter(Boolean)
+            .join(", ") || "Unknown";
+
+        const platforms = (game.platforms || [])
+            .map(item => item.platform?.name)
+            .filter(Boolean)
+            .join(", ") || "Unknown";
+
+        const developers = (game.developers || [])
+            .map(item => item.name)
+            .filter(Boolean)
+            .join(", ") || "Unknown";
+
+        const publishers = (game.publishers || [])
+            .map(item => item.name)
+            .filter(Boolean)
+            .join(", ") || "Unknown";
+
+        const description = cleanDescription(
+            game.description || ""
         );
-
-        const screenshots = Array.isArray(game.screenshots)
-            ? game.screenshots
-            : [];
 
         gamesGrid.innerHTML = `
             <section class="gn-detail">
@@ -551,375 +383,122 @@ async function openGameDetails(id) {
                 <div class="gn-detail-layout">
                     <div class="gn-detail-art">
                         ${
-                            game.thumbnail
-                                ? `<img src="${escapeHTML(game.thumbnail)}"
-                                    alt="${escapeHTML(game.title)} artwork">`
+                            game.background_image
+                                ? `<img src="${escapeHTML(game.background_image)}"
+                                    alt="${escapeHTML(game.name)} cover">`
                                 : `<div class="gn-no-cover">No cover available</div>`
                         }
                     </div>
 
                     <div class="gn-detail-info">
                         <p class="gn-eyebrow">GAME DETAILS</p>
-                        <h2>${escapeHTML(game.title || "Untitled game")}</h2>
+                        <h2>${escapeHTML(game.name)}</h2>
 
-                        <p class="gn-detail-description">
-                            ${escapeHTML(description || "No description is available.")}
-                        </p>
+                        <div class="gn-detail-rating">
+                            ★ ${game.rating
+                                ? Number(game.rating).toFixed(1)
+                                : "Not rated"}
+                            ${game.metacritic
+                                ? ` · Metacritic ${escapeHTML(game.metacritic)}`
+                                : ""}
+                        </div>
+
+                        <p>${escapeHTML(description ||
+                            "No description is available for this game.")}</p>
 
                         <dl class="gn-facts">
                             <div>
-                                <dt>Genre</dt>
-                                <dd>${escapeHTML(game.genre || "Unknown")}</dd>
-                            </div>
-                            <div>
-                                <dt>Platform</dt>
-                                <dd>${escapeHTML(game.platform || "Unknown")}</dd>
-                            </div>
-                            <div>
                                 <dt>Release date</dt>
-                                <dd>${escapeHTML(game.release_date || "Unknown")}</dd>
+                                <dd>${escapeHTML(game.released || "Unknown")}</dd>
+                            </div>
+                            <div>
+                                <dt>Genres</dt>
+                                <dd>${escapeHTML(genres)}</dd>
+                            </div>
+                            <div>
+                                <dt>Platforms</dt>
+                                <dd>${escapeHTML(platforms)}</dd>
                             </div>
                             <div>
                                 <dt>Developer</dt>
-                                <dd>${escapeHTML(game.developer || "Unknown")}</dd>
+                                <dd>${escapeHTML(developers)}</dd>
                             </div>
                             <div>
                                 <dt>Publisher</dt>
-                                <dd>${escapeHTML(game.publisher || "Unknown")}</dd>
+                                <dd>${escapeHTML(publishers)}</dd>
                             </div>
                         </dl>
 
                         <button class="gn-button gn-add-detail"
-                            data-action="add-to-list"
+                            data-action="add"
                             data-id="${escapeHTML(game.id)}">
-                            + Add to a list
+                            + Add to Plan
                         </button>
 
-                        ${
-                            game.game_url
-                                ? `<p class="gn-attribution">
-                                    <a href="${escapeHTML(game.game_url)}"
-                                        target="_blank"
-                                        rel="noopener noreferrer">
-                                        Official game page ↗
-                                    </a>
-                                   </p>`
-                                : ""
-                        }
-
-                        ${
-                            screenshots.length
-                                ? `<h3 class="gn-screenshot-title">Screenshots</h3>
-                                   <div class="gn-screenshots">
-                                     ${screenshots.map(screenshot => `
-                                        <img src="${escapeHTML(screenshot.image)}"
-                                            alt="${escapeHTML(game.title)} screenshot"
-                                            loading="lazy">
-                                     `).join("")}
-                                   </div>`
-                                : ""
-                        }
-
                         <p class="gn-attribution">
-                            Game data provided by
-                            <a href="https://www.freetogame.com/"
+                            Game information and artwork provided by
+                            <a href="https://rawg.io/"
                                 target="_blank"
-                                rel="noopener noreferrer">FreeToGame</a>.
+                                rel="noopener noreferrer">RAWG</a>.
                         </p>
                     </div>
                 </div>
             </section>
         `;
-
-        // Store full detail data for future use in the user's library.
-        const library = getLibrary();
-        library.games[String(game.id)] = {
-            ...library.games[String(game.id)],
-            ...game
-        };
-        saveLibrary(library);
-
     } catch (error) {
-        if (thisRequest !== requestId) return;
+        if (thisRequest !== requestNumber) return;
 
         showMessage("Couldn't load game details", error.message, true);
     }
 }
 
-/* ---------- 10. MY LIBRARY / LIST MANAGEMENT ---------- */
+/* ---------- 9. PLAN AND COMPLETED ---------- */
 
-function openLibraryManager() {
-    currentPage = "library";
-    currentView = "library";
-    activeListId = null;
-
-    const lists = getLibrary().lists;
-
-    gridTitle.textContent = "My Library";
-
-    gamesGrid.innerHTML = `
-        <section class="gn-library">
-            <div class="gn-library-heading">
-                <div>
-                    <p class="gn-eyebrow">YOUR COLLECTION</p>
-                    <h2>My Lists</h2>
-                    <p class="gn-muted">
-                        Organize games your way. Your lists are saved in this browser.
-                    </p>
-                </div>
-
-                <button class="gn-button"
-                    data-action="create-list">
-                    + New List
-                </button>
-            </div>
-
-            <div class="gn-list-manager">
-                ${lists.map(list => {
-                    const count = (getLibrary().memberships[list.id] || []).length;
-
-                    return `
-                        <article class="gn-list-card">
-                            <button class="gn-list-open"
-                                data-action="open-list"
-                                data-list-id="${escapeHTML(list.id)}">
-                                <span class="gn-list-icon">▤</span>
-                                <span class="gn-list-copy">
-                                    <strong>${escapeHTML(list.name)}</strong>
-                                    <small>${count} ${count === 1 ? "game" : "games"}</small>
-                                </span>
-                                <span class="gn-list-arrow">→</span>
-                            </button>
-
-                            <div class="gn-list-manage-actions">
-                                <button class="gn-button gn-button-secondary"
-                                    data-action="rename-list"
-                                    data-list-id="${escapeHTML(list.id)}">
-                                    Rename
-                                </button>
-
-                                ${
-                                    list.builtIn
-                                        ? `<span class="gn-built-in">Default</span>`
-                                        : `<button class="gn-button gn-button-danger"
-                                            data-action="delete-list"
-                                            data-list-id="${escapeHTML(list.id)}">
-                                            Delete
-                                          </button>`
-                                }
-                            </div>
-                        </article>
-                    `;
-                }).join("")}
-            </div>
-
-            <button class="gn-button gn-button-secondary"
-                data-action="back-to-discover">
-                Explore games
-            </button>
-        </section>
-    `;
-}
-
-function openList(listId) {
-    const list = getList(listId);
-
-    if (!list) {
-        showNotice("List not found.");
-        openLibraryManager();
-        return;
-    }
-
-    currentPage = "library";
-    currentView = "list";
-    activeListId = listId;
-
-    gridTitle.textContent = list.name;
-
-    const games = getListGames(listId);
-
-    gamesGrid.innerHTML = `
-        <section class="gn-list-page">
-            <div class="gn-list-page-heading">
-                <button class="gn-button gn-button-secondary"
-                    data-action="manage-lists">
-                    ← My Lists
-                </button>
-
-                <h2>${escapeHTML(list.name)}</h2>
-                <p class="gn-muted">${games.length} saved games</p>
-            </div>
-
-            <div class="gn-games-list">
-                ${
-                    games.length
-                        ? games.map(game => `
-                            <article class="gn-saved-game">
-                                <button class="gn-saved-game-main"
-                                    data-action="details"
-                                    data-id="${escapeHTML(game.id)}">
-                                    ${
-                                        game.thumbnail
-                                            ? `<img src="${escapeHTML(game.thumbnail)}"
-                                                alt="" loading="lazy">`
-                                            : `<div class="gn-saved-placeholder">🎮</div>`
-                                    }
-                                    <span>
-                                        <strong>${escapeHTML(game.title || game.name)}</strong>
-                                        <small>${escapeHTML(game.genre || "Game")}</small>
-                                    </span>
-                                </button>
-
-                                <button class="gn-button gn-button-danger"
-                                    data-action="remove-from-list"
-                                    data-id="${escapeHTML(game.id)}"
-                                    data-list-id="${escapeHTML(listId)}">
-                                    Remove
-                                </button>
-                            </article>
-                        `).join("")
-                        : `<div class="gn-message">
-                            <h3>This list is empty</h3>
-                            <p>Find a game and add it to this list.</p>
-                           </div>`
-                }
-            </div>
-
-            <button class="gn-button"
-                data-action="go-discover">
-                + Find games
-            </button>
-        </section>
-    `;
-}
-
-function createList() {
-    const name = prompt("What would you like to call your new list?");
-
-    if (name === null) return;
-
-    const cleanName = name.trim();
-
-    if (!cleanName) {
-        showNotice("Enter a list name first.");
-        return;
-    }
-
-    const library = getLibrary();
-
-    if (library.lists.some(
-        list => list.name.toLowerCase() === cleanName.toLowerCase()
-    )) {
-        showNotice("A list with that name already exists.");
-        return;
-    }
-
-    const id = `custom-${Date.now()}`;
-
-    library.lists.push({
-        id,
-        name: cleanName,
-        builtIn: false
-    });
-
-    library.memberships[id] = [];
-
-    if (saveLibrary(library)) {
-        showNotice("Your new list is ready.");
-        openLibraryManager();
-    }
-}
-
-function renameList(listId) {
-    const library = getLibrary();
-    const list = library.lists.find(item => item.id === listId);
-
-    if (!list) return;
-
-    const name = prompt("Enter a new list name:", list.name);
-
-    if (name === null) return;
-
-    const cleanName = name.trim();
-
-    if (!cleanName) {
-        showNotice("List name can't be empty.");
-        return;
-    }
-
-    if (library.lists.some(
-        item => item.id !== listId &&
-            item.name.toLowerCase() === cleanName.toLowerCase()
-    )) {
-        showNotice("A list with that name already exists.");
-        return;
-    }
-
-    list.name = cleanName;
-
-    if (saveLibrary(library)) {
-        openLibraryManager();
-        showNotice("List renamed.");
-    }
-}
-
-function deleteList(listId) {
-    const library = getLibrary();
-    const list = library.lists.find(item => item.id === listId);
-
-    if (!list || list.builtIn) return;
-
-    if (!confirm(`Delete "${list.name}" and remove all its saved games from this list?`)) {
-        return;
-    }
-
-    library.lists = library.lists.filter(item => item.id !== listId);
-    delete library.memberships[listId];
-
-    if (saveLibrary(library)) {
-        openLibraryManager();
-        showNotice("List deleted.");
-    }
-}
-
-function removeGameFromList(gameId, listId) {
-    const library = getLibrary();
-    const key = listId || activeListId;
-
-    if (!key || !library.memberships[key]) return;
-
-    library.memberships[key] = library.memberships[key].filter(
-        id => String(id) !== String(gameId)
+function loadSavedList(status) {
+    const games = getSavedGames().filter(
+        game => game.status === status
     );
 
-    if (saveLibrary(library)) {
-        showNotice("Game removed from list.");
-        openList(key);
-    }
+    renderGameCards(
+        games,
+        status === "completed" ? "completed" : "plan"
+    );
 }
 
-/* ---------- 11. NAVIGATION ---------- */
+/* ---------- 10. NAVIGATION ---------- */
 
 function updateNavigationPill() {
     if (!nav) return;
 
-    const active = nav.querySelector(".nav-btn.active");
-    if (!active) return;
+    const activeButton = nav.querySelector(".nav-btn.active");
+    if (!activeButton) return;
 
     const navRect = nav.getBoundingClientRect();
-    const buttonRect = active.getBoundingClientRect();
+    const buttonRect = activeButton.getBoundingClientRect();
+
     const x = buttonRect.left - navRect.left - nav.clientLeft;
 
     nav.style.setProperty("--pill-x", `${x}px`);
     nav.style.setProperty("--pill-width", `${buttonRect.width}px`);
 }
 
+function renderCurrentPage() {
+    currentView = "grid";
+
+    if (currentPage === "discover") {
+        loadDiscover(searchBar?.value || "");
+    } else if (currentPage === "plan") {
+        loadSavedList("plan");
+    } else if (currentPage === "completed") {
+        loadSavedList("completed");
+    }
+}
+
 function changePage(page) {
-    if (!["discover", "plan", "completed"].includes(page)) return;
+    if (!pageTitles[page]) return;
 
     currentPage = page;
     currentView = "grid";
-    activeListId = null;
 
     navButtons.forEach(button => {
         const active = button.dataset.page === page;
@@ -933,27 +512,12 @@ function changePage(page) {
         }
     });
 
-    gridTitle.textContent = page === "plan"
-        ? "Plan to Play"
-        : pageTitlesForNavigation(page);
-
-    updateNavigationPill();
-
-    if (page === "discover") {
-        renderDiscover();
-        return;
+    if (gridTitle) {
+        gridTitle.textContent = pageTitles[page];
     }
 
-    const listId = page === "plan" ? "plan" : "completed";
-    openList(listId);
-}
-
-function pageTitlesForNavigation(page) {
-    return {
-        discover: "Discover",
-        plan: "Plan to Play",
-        completed: "Completed"
-    }[page];
+    renderCurrentPage();
+    updateNavigationPill();
 }
 
 navButtons.forEach(button => {
@@ -962,13 +526,23 @@ navButtons.forEach(button => {
     });
 });
 
-/* ---------- 12. TOP ADD GAME BUTTON ---------- */
+/* ---------- 11. SEARCH ---------- */
 
-if (addButton) {
-    addButton.addEventListener("click", openLibraryManager);
+if (searchBar) {
+    searchBar.addEventListener("input", () => {
+        if (currentPage !== "discover") {
+            changePage("discover");
+        } else {
+            clearTimeout(searchTimer);
+
+            searchTimer = setTimeout(() => {
+                loadDiscover(searchBar.value);
+            }, 400);
+        }
+    });
 }
 
-/* ---------- 13. ALL GRID ACTIONS ---------- */
+/* ---------- 12. BUTTON ACTIONS ---------- */
 
 gamesGrid.addEventListener("click", async event => {
     const button = event.target.closest("[data-action]");
@@ -976,87 +550,89 @@ gamesGrid.addEventListener("click", async event => {
 
     const action = button.dataset.action;
     const id = button.dataset.id;
-    const listId = button.dataset.listId;
 
-    switch (action) {
-        case "retry":
-            if (currentView === "details" && id) {
-                openGameDetails(id);
+    if (action === "retry") {
+        renderCurrentPage();
+        return;
+    }
+
+    if (action === "back") {
+        currentView = "grid";
+        renderCurrentPage();
+        return;
+    }
+
+    if (action === "details") {
+        await openGameDetails(id);
+        return;
+    }
+
+    if (action === "add") {
+        let game = getSavedGames().find(
+            item => String(item.id) === String(id)
+        );
+
+        if (!game) {
+            const card = button.closest(".gn-game-card");
+
+            if (card) {
+                const title = card.querySelector("h3")?.textContent || "";
+                const image = card.querySelector(".gn-cover")?.src || "";
+
+                game = {
+                    id: Number(id),
+                    name: title,
+                    background_image: image,
+                    status: "plan"
+                };
             } else {
-                catalog = [];
-                renderDiscover();
+                try {
+                    game = await fetchRAWG(`games/${encodeURIComponent(id)}`);
+                } catch (error) {
+                    showNotice(error.message);
+                    return;
+                }
             }
-            break;
-
-        case "details":
-            await openGameDetails(id);
-            break;
-
-        case "add-to-list":
-            await openAddToList(id);
-            break;
-
-        case "confirm-add": {
-            const game = getGameFromCatalog(id) ||
-                getLibrary().games[String(id)];
-
-            if (game) {
-                saveGameToList(game, listId);
-                openList(listId);
-            }
-            break;
         }
 
-        case "back":
-            if (currentPage === "library" && activeListId) {
-                openList(activeListId);
-            } else if (currentPage === "discover") {
-                renderDiscover();
-            } else {
-                openLibraryManager();
-            }
-            break;
+        addGameToPlan(game);
+        return;
+    }
 
-        case "create-list":
-            createList();
-            break;
+    if (action === "complete") {
+        changeGameStatus(id, "completed");
+        showNotice("Game marked as completed.");
+        return;
+    }
 
-        case "open-list":
-            openList(listId);
-            break;
-
-        case "manage-lists":
-            openLibraryManager();
-            break;
-
-        case "rename-list":
-            renameList(listId);
-            break;
-
-        case "delete-list":
-            deleteList(listId);
-            break;
-
-        case "remove-from-list":
-            removeGameFromList(id, listId);
-            break;
-
-        case "back-to-discover":
-        case "go-discover":
-            changePage("discover");
-            break;
+    if (action === "move-to-plan") {
+        changeGameStatus(id, "plan");
+        showNotice("Game moved to Your Plan.");
     }
 });
 
-/* ---------- 14. STARTUP ---------- */
+/* ---------- 13. ADD GAME BUTTON ---------- */
 
-const pageTitles = {
-    discover: "Discover",
-    plan: "Plan to Play",
-    completed: "Completed"
-};
+if (addButton) {
+    addButton.addEventListener("click", () => {
+        changePage("plan");
 
-resetFilters();
+        if (searchBar) {
+            searchBar.focus();
+            searchBar.placeholder = "Search Discover to find a game...";
+        }
+
+        showNotice(
+            "Your lists are here. Search Discover to find games to add."
+        );
+    });
+}
+
+/* ---------- 14. INITIALIZE ---------- */
+
+if (searchBar) {
+    searchBar.value = "";
+}
 
 navButtons.forEach(button => {
     button.classList.toggle(

@@ -4,102 +4,100 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Game Note</title>
-    <link rel="icon" type="image/png" href="images/Neon Glass Gaming Notes Icon.png">
+    <link rel="icon" type="img/png" href="images/Neon Glass Gaming Notes Icon.png">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     
-    <header class="top-bar">
+  <header class="top-bar">
 
-        <div class="logo-section">
-            <img id="logo-img" src="images/Neon Glass Gaming Notes Icon.png">
-            <h2 id="logo-txt">Game Note</h2>
-        </div>
-        <div class="quick-actions">
-            <button id="add-btn">Add Game +</button>
-            <button type="button" id="dark-mode-btn" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
-        </div>
+    <div class="logo-section">
+      <img id="logo-img" src="images/Neon Glass Gaming Notes Icon.png">
+      <h2 id="logo-txt">Game Note</h2>
+    </div>
+    <div class="quick-actions">
+      <button id="add-btn">Add Game +</button>
+      <button id="dark-mode-btn">🌙</button>
+    </div>
 
-    </header>
+  </header>
 
-    <main>
+  <main>
 
-        <section class="hero">
-            <h1>Plan and note your favorite games.</h1>
-        </section>
-
-        <nav class="nav">
-            <button class="nav-btn active" data-page="discover">
-                Discover
-            </button>
-
-            <button class="nav-btn" data-page="plan">
-                Plan
-            </button>
-
-            <button class="nav-btn" data-page="completed">
-                Completed
-            </button>
-        </nav>
-
-        <section class="search-section">
-            <input type="search" id="search-bar" placeholder="Search games...">
-        </section>
-
-        <section class="filters-section">
-
-            <select id="genre-filter">
-                <option value="" selected disabled hidden>Genre</option>
-                <option value="">All genres</option>
-                <option value="action">Action</option>
-                <option value="adventure">Adventure</option>
-                <option value="rpg">RPG</option>
-                <option value="horror">Horror</option>
-                <option value="indie">Indie</option>
-                <option value="puzzle">Puzzle</option>
-                <option value="simulation">Simulation</option>
-            </select>
-
-            <select id="platform-filter">
-                <option value="" selected disabled hidden>Platform</option>
-                <option value="">All platforms</option>
-                <option value="pc">PC</option>
-                <option value="playstation">Playstation</option>
-                <option value="xbox">Xbox</option>
-                <option value="switch">Nintendo Switch</option>
-            </select>
-
-            <select id="rating-filter">
-                <option value="" selected disabled hidden>Rating</option>
-                <option value="">All ratings</option>
-            </select>
-
-            <select id="sort">
-                <option value="" selected disabled hidden>Sort by</option>
-                <option value="">Default</option>
-                <option value="rating">Rating</option>
-                <option value="release">Release Date</option>
-                <option value="name">Name</option>
-            </select>
-
-        </section>
-
-        <section class="grid-section">
-
-            <h2 id="grid-title">Recommended for you</h2>
-            <div id="games-grid" class="games-grid">
-
-            </div>
-
-        </section>
-
-    </main>
-    
+    <section class="hero">
+      <h1>Plan and note your favorite games.</h1>
+    </section>
 
     
-    <script src="index.js"></script>
-    </body>
-    </html>
+    <nav class="nav">
+      <button class="nav-btn active" data-page="discover">
+          Discover
+      </button>
 
+      <button class="nav-btn" data-page="plan">
+          Plan
+      </button>
+
+      <button class="nav-btn" data-page="completed">
+          Completed
+      </button>
+    </nav>
+
+
+    <section class="search-section">
+      <input type="search" id="search-bar" placeholder="Search games...">
+    </section>
+
+    <section class="filters-section">
+
+      <select id="genre-filter">
+        <option value="" selected disabled hidden>Genre</option>
+        <option value="">All genres</option>
+        <option value="action">Action</option>
+        <option value="adventure">Adventure</option>
+        <option value="rpg">RPG</option>
+        <option value="horror">Horror</option>
+        <option value="indie">Indie</option>
+        <option value="puzzle">Puzzle</option>
+        <option value="simulation">Simulation</option>
+      </select>
+
+      <select id="platform-filter">
+        <option value="" selected disabled hidden>Platform</option>
+        <option value="">All platforms</option>
+        <option value="pc">PC</option>
+        <option value="playstation">Playstation</option>
+        <option value="xbox">Xbox</option>
+        <option value="switch">Nintendo Switch</option>
+      </select>
+
+      <select id="rating-filter">
+        <option value="" selected disabled hidden>Rating</option>
+        <option value="">All ratings</option>
+      </select>
+
+      <select id="sort">
+        <option value="" selected disabled hidden>Sort by</option>
+        <option value="">Default</option>
+        <option value="rating">Rating</option>
+        <option value="release">Release Date</option>
+        <option value="name">Name</option>
+      </select>
+
+    </section>
+
+    <section class="grid-section">
+
+      <h2 id="grid-title">Recommended for you</h2>
+      <div id="games-grid" class="games-grid">
+
+      </div>
+
+    </section>
+
+  </main>
+    
+  <script src="config.js"></script>
+  <script src="index.js"></script>
 </body>
 </html>
