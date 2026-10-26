@@ -1,103 +1,161 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Game Note</title>
-    <link rel="icon" type="img/png" href="images/Neon Glass Gaming Notes Icon.png">
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#000000">
+  <meta name="description" content="Game Note — discover games, plan your next adventure, and track the games you've completed.">
+  <title>Game Note — Your personal game library</title>
+  <link rel="icon" href="images/Neon Glass Gaming Notes Icon.png">
+  <link rel="preload" href="fonts/Inter-VariableFont_opsz_wght.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css">
+  <script src="config.js"></script>
+  <script src="index.js" defer></script>
 </head>
 <body>
-    
-  <header class="top-bar">
+  <a class="skip-link" href="#main-content">Skip to games</a>
 
-    <div class="logo-section">
-      <img id="logo-img" src="images/Neon Glass Gaming Notes Icon.png">
-      <h2 id="logo-txt">Game Note</h2>
-    </div>
-    <div class="quick-actions">
-      <button id="add-btn">Add Game +</button>
-      <button id="dark-mode-btn">🌙</button>
-    </div>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
 
-  </header>
+  <div class="app-shell">
+    <header class="topbar glass">
+      <a class="brand" href="#" aria-label="Game Note home" id="brand-home">
+        <img src="images/Neon Glass Gaming Notes Icon.png" alt="" class="brand-icon">
+        <span class="brand-copy">
+          <strong>Game Note</strong>
+          <small>Your personal game library</small>
+        </span>
+      </a>
 
-  <main>
+      <div class="header-actions">
+        <button class="button button-quiet" id="new-mix-btn" type="button" title="Get a fresh Discover mix">
+          <span aria-hidden="true">✦</span> New mix
+        </button>
+        <button class="button button-primary" id="add-btn" type="button">
+          <span aria-hidden="true">＋</span> Add Game
+        </button>
+        <button class="icon-button" id="theme-btn" type="button" aria-label="Switch to light theme" title="Toggle theme">
+          <span aria-hidden="true">☾</span>
+        </button>
+      </div>
+    </header>
 
     <section class="hero">
-      <h1>Plan and note your favorite games.</h1>
-    </section>
-
-    
-    <nav class="nav">
-      <button class="nav-btn active" data-page="discover">
-          Discover
-      </button>
-
-      <button class="nav-btn" data-page="plan">
-          Plan
-      </button>
-
-      <button class="nav-btn" data-page="completed">
-          Completed
-      </button>
-    </nav>
-
-
-    <section class="search-section">
-      <input type="search" id="search-bar" placeholder="Search games...">
-    </section>
-
-    <section class="filters-section">
-
-      <select id="genre-filter">
-        <option value="" selected disabled hidden>Genre</option>
-        <option value="">All genres</option>
-        <option value="action">Action</option>
-        <option value="adventure">Adventure</option>
-        <option value="rpg">RPG</option>
-        <option value="horror">Horror</option>
-        <option value="indie">Indie</option>
-        <option value="puzzle">Puzzle</option>
-        <option value="simulation">Simulation</option>
-      </select>
-
-      <select id="platform-filter">
-        <option value="" selected disabled hidden>Platform</option>
-        <option value="">All platforms</option>
-        <option value="pc">PC</option>
-        <option value="playstation">Playstation</option>
-        <option value="xbox">Xbox</option>
-        <option value="switch">Nintendo Switch</option>
-      </select>
-
-      <select id="rating-filter">
-        <option value="" selected disabled hidden>Rating</option>
-        <option value="">All ratings</option>
-      </select>
-
-      <select id="sort">
-        <option value="" selected disabled hidden>Sort by</option>
-        <option value="">Default</option>
-        <option value="rating">Rating</option>
-        <option value="release">Release Date</option>
-        <option value="name">Name</option>
-      </select>
-
-    </section>
-
-    <section class="grid-section">
-
-      <h2 id="grid-title">Recommended for you</h2>
-      <div id="games-grid" class="games-grid">
-
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="status-dot"></span> DISCOVER · PLAN · PLAY</p>
+        <h1>Find your next<br><span class="gradient-text">great adventure.</span></h1>
+        <p class="hero-description">
+          A personal space for the games you love, the games you want to play,
+          and the unexpected gems you haven't discovered yet.
+        </p>
       </div>
 
+      <aside class="library-stat glass">
+        <div class="stat-icon" aria-hidden="true">✧</div>
+        <p class="eyebrow">YOUR LIBRARY</p>
+        <div class="stat-number" id="library-count">0</div>
+        <p class="stat-caption">games saved across your lists</p>
+        <div class="stat-divider"></div>
+        <div class="stat-split">
+          <span><i class="stat-dot plan-dot"></i> Plan <strong id="plan-count">0</strong></span>
+          <span><i class="stat-dot done-dot"></i> Done <strong id="completed-count">0</strong></span>
+          <span><i class="stat-dot priority-dot"></i> ★ <strong id="priority-count">0</strong></span>
+        </div>
+      </aside>
     </section>
 
-  </main>
-    
-  <script src="config.js"></script>
-  <script src="index.js"></script>
+    <nav class="main-nav glass" aria-label="Game lists">
+      <span class="nav-indicator" id="nav-indicator"></span>
+      <button class="nav-button active" data-page="discover" type="button" aria-current="page">Discover</button>
+      <button class="nav-button" data-page="plan" type="button">Your Plan <span class="nav-count" id="plan-nav-count">0</span></button>
+      <button class="nav-button" data-page="completed" type="button">Completed <span class="nav-count" id="completed-nav-count">0</span></button>
+    </nav>
+
+    <section class="discovery-tools" aria-label="Search and filters">
+      <label class="search-box glass">
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <input id="search-bar" type="search" placeholder="Search games, genres, or platforms…" autocomplete="off" aria-label="Search games">
+        <kbd title="Press / to search">/</kbd>
+      </label>
+
+      <div class="filter-row">
+        <label class="filter-control">
+          <span>Genre</span>
+          <select id="genre-filter" autocomplete="off">
+            <option value="">All genres</option>
+          </select>
+        </label>
+
+        <label class="filter-control">
+          <span>Platform</span>
+          <select id="platform-filter" autocomplete="off">
+            <option value="">All platforms</option>
+          </select>
+        </label>
+
+        <label class="filter-control">
+          <span>Metascore</span>
+          <select id="metascore-filter" autocomplete="off">
+            <option value="">Any score</option>
+            <option value="90">90 and above</option>
+            <option value="80">80 and above</option>
+            <option value="70">70 and above</option>
+          </select>
+        </label>
+
+        <label class="filter-control">
+          <span>Release year</span>
+          <select id="year-filter" autocomplete="off">
+            <option value="">Any year</option>
+          </select>
+        </label>
+
+        <label class="filter-control sort-control">
+          <span>Sort by</span>
+          <select id="sort" autocomplete="off"></select>
+        </label>
+
+        <button class="button button-quiet reset-button" id="reset-filters-btn" type="button">Reset</button>
+      </div>
+    </section>
+
+    <main id="main-content">
+      <section class="feed-heading">
+        <div>
+          <p class="eyebrow" id="feed-eyebrow">YOUR NEXT FAVORITE</p>
+          <h2 id="grid-title">Discover</h2>
+          <p class="feed-description" id="feed-description">
+            Big-name favorites, fresh discoveries, and games shaped by your taste.
+          </p>
+        </div>
+        <p class="results-count" id="results-count" aria-live="polite"></p>
+      </section>
+
+      <div id="games-grid" class="games-grid" aria-live="polite"></div>
+
+      <div class="pagination" id="pagination" hidden>
+        <button class="button button-quiet" id="previous-page" type="button">← Previous</button>
+        <span id="page-indicator">Page 1</span>
+        <button class="button button-quiet" id="next-page" type="button">Next →</button>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-tools">
+        <button class="link-button" id="export-btn" type="button">Export backup</button>
+        <button class="link-button" id="import-btn" type="button">Import backup</button>
+        <button class="link-button danger" id="clear-btn" type="button">Clear library</button>
+        <input type="file" id="import-input" accept="application/json,.json" hidden>
+      </div>
+      <span>Press <kbd>/</kbd> to search · Game information and artwork via RAWG.</span>
+    </footer>
+  </div>
+
+  <div class="gn-notice" id="game-note-notice" role="status" aria-live="polite"></div>
+
+  <noscript>
+    <p style="padding:20px;text-align:center;color:#a9a4b8">Game Note needs JavaScript to run.</p>
+  </noscript>
 </body>
 </html>
