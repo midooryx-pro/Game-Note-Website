@@ -8,20 +8,26 @@ module.exports = async (req, res) => {
     });
   }
 
-  const { path, key: ignored, ...params } = req.query;
-  const endpoint = Array.isArray(path) ? path.join("/") : String(path || "");
+  // Read the requested page straight from the address,
+  // e.g. /api/rawg/games/123/screenshots -> "games/123/screenshots"
+  const incoming = new URL(req.url, "http://localhost");
+  const endpoint = incoming.pathname
+    .replace(/^\/api\/rawg\/?/, "")
+    .replace(/\/+$/, "");
 
   // Only allow the RAWG requests Game Note actually uses.
   const allowed = /^(games|games\/\d+|games\/\d+\/screenshots|genres)$/;
 
   if (!allowed.test(endpoint)) {
-    return res.status(400).json({ error: "Endpoint not allowed." });
+    return res.status(400).json({ error: `Endpoint not allowed: "${endpoint}"` });
   }
 
   const url = new URL(`https://api.rawg.io/api/${endpoint}`);
 
-  Object.entries(params).forEach(([name, value]) => {
-    url.searchParams.set(name, Array.isArray(value) ? value[0] : value);
+  incoming.searchParams.forEach((value, name) => {
+    if (name !== "key") {
+      url.searchParams.set(name, value);
+    }
   });
 
   url.searchParams.set("key", key);
