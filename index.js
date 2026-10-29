@@ -8,6 +8,7 @@
   - Sort options change per page; filters ask RAWG on Discover and
     filter your own list on Your Plan / Completed
   - Notes + star rating per saved game, undo, backup, keyboard shortcuts
+  - RAWG requests go through /api/rawg on this site, so the secret key stays on the server
 */
 
 "use strict";
@@ -256,23 +257,12 @@ function slimGame(game, extra = {}) {
 
 /* -------------------- API -------------------- */
 
-function getApiKey() {
-  const key = window.RAWG_API_KEY;
-
-  if (
-    !key ||
-    key === "PASTE_YOUR_RAWG_API_KEY_HERE" ||
-    key === "placeholder"
-  ) {
-    throw new Error("Add your RAWG API key to config.js first.");
-  }
-
-  return key;
-}
-
+// Asks our own server (api/rawg.js) for RAWG data.
+// The server adds the secret key, so no key is needed here.
+// Example address: /api/rawg?path=games/3498
 async function fetchRAWG(endpoint, params = {}) {
-  const url = new URL(`${API_BASE}/${endpoint}`);
-  url.searchParams.set("key", getApiKey());
+  const url = new URL(API_BASE);
+  url.searchParams.set("path", endpoint);
 
   Object.entries(params).forEach(([name, value]) => {
     if (value !== undefined && value !== null && value !== "") {
@@ -285,11 +275,11 @@ async function fetchRAWG(endpoint, params = {}) {
   try {
     response = await fetch(url);
   } catch {
-    throw new Error("Couldn't reach RAWG. Check your internet connection and try again.");
+    throw new Error("Couldn't reach the server. Check your internet connection and try again.");
   }
 
   if (response.status === 401 || response.status === 403) {
-    throw new Error("RAWG rejected the request. Check your API key.");
+    throw new Error("RAWG rejected the request. Check the RAWG_API_KEY in your Vercel settings.");
   }
 
   if (response.status === 429) {
