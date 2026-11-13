@@ -63,6 +63,28 @@ const PLATFORM_OPTIONS = [
   { value: "7", label: "Nintendo" }
 ];
 
+// Genres rotated through to add variety to the Discover mix.
+const VARIETY_GENRES = [
+  "action",
+  "adventure",
+  "indie",
+  "role-playing-games-rpg",
+  "strategy",
+  "shooter",
+  "platformer",
+  "puzzle",
+  "simulation",
+  "racing",
+  "sports",
+  "casual"
+];
+
+const pageTitles = {
+  discover: "Discover",
+  plan: "Your Plan",
+  completed: "Completed"
+};
+
 const $ = (selector) => document.querySelector(selector);
 
 const nav = $(".main-nav");
@@ -92,14 +114,8 @@ const importButton = $("#import-btn");
 const importInput = $("#import-input");
 const clearButton = $("#clear-btn");
 
-const pageTitles = {
-  discover: "Discover",
-  plan: "Your Plan",
-  completed: "Completed"
-};
-
 let currentPage = "discover";
-let currentView = "grid";
+let currentView = "grid"; // "grid" or "details"
 let currentApiPage = 1;
 let lastApiPage = 1;
 let searchTimer;
@@ -146,6 +162,7 @@ function uniqueById(games) {
   });
 }
 
+// Seeded shuffle so a "New mix" is different but stable while you browse.
 function shuffleArray(items) {
   const result = [...items];
 
@@ -156,6 +173,13 @@ function shuffleArray(items) {
   }
 
   return result;
+}
+
+function toSlug(name) {
+  return String(name)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
 }
 
 function getGameGenres(game) {
@@ -322,6 +346,19 @@ function getSavedIds() {
   return new Set(getSavedGames().map(game => String(game.id)));
 }
 
+// Finds a saved game, lets `update` change it, saves, and returns it (or null).
+function updateSavedGame(id, update) {
+  const saved = getSavedGames();
+  const game = saved.find(item => String(item.id) === String(id));
+
+  if (!game) return null;
+
+  update(game);
+  saveGames(saved);
+
+  return game;
+}
+
 // Finds full game info from whatever we already have, or asks RAWG.
 async function resolveGame(id) {
   return (
@@ -370,10 +407,7 @@ function addGame(game, destination = "plan", priority = false) {
 }
 
 async function togglePriority(id) {
-  const saved = getSavedGames();
-  const game = saved.find(item => String(item.id) === String(id));
-
-  if (!game) {
+  if (!findSavedGame(id)) {
     try {
       addGame(await resolveGame(id), "plan", true);
     } catch {
@@ -383,8 +417,9 @@ async function togglePriority(id) {
     return;
   }
 
-  game.priority = !game.priority;
-  saveGames(saved);
+  const game = updateSavedGame(id, item => {
+    item.priority = !item.priority;
+  });
 
   showNotice(
     game.priority
@@ -396,13 +431,11 @@ async function togglePriority(id) {
 }
 
 function changeGameStatus(id, status) {
-  const saved = getSavedGames();
-  const game = saved.find(item => String(item.id) === String(id));
+  const game = updateSavedGame(id, item => {
+    item.status = status;
+  });
 
   if (!game) return;
-
-  game.status = status;
-  saveGames(saved);
 
   showNotice(
     status === "completed"
@@ -447,13 +480,11 @@ function restoreGame(game) {
 }
 
 function setRating(id, value) {
-  const saved = getSavedGames();
-  const game = saved.find(item => String(item.id) === String(id));
+  const game = updateSavedGame(id, item => {
+    item.rating = item.rating === value ? 0 : value;
+  });
 
   if (!game) return;
-
-  game.rating = game.rating === value ? 0 : value;
-  saveGames(saved);
 
   // Update the stars in place so the notes box keeps its focus.
   document.querySelectorAll(".gn-rate").forEach(star => {
@@ -464,13 +495,7 @@ function setRating(id, value) {
 }
 
 function saveNote(id, text) {
-  const saved = getSavedGames();
-  const game = saved.find(item => String(item.id) === String(id));
-
-  if (!game) return;
-
-  game.note = text;
-  saveGames(saved);
+  if (!updateSavedGame(id, item => { item.note = text; })) return;
 
   const status = $("#note-status");
   if (status) status.textContent = "Saved ✓";
@@ -672,11 +697,10 @@ function scrollToFeed() {
 /* -------------------- PERSONALIZATION -------------------- */
 
 function getTasteProfile() {
-  const saved = getSavedGames();
   const genres = new Map();
   const platforms = new Map();
 
-  saved.forEach(game => {
+  getSavedGames().forEach(game => {
     const weight = game.status === "plan" ? 1.35 : 1;
 
     getGameGenres(game).forEach(name => {
@@ -749,6 +773,16 @@ async function fetchDiscoverPool(page = 1) {
   return games;
 }
 
+// Fetches popular games for one genre; a failed request just returns nothing.
+function fetchGenreGames(genreSlug, pageSize) {
+  return fetchRAWG("games", {
+    page_size: pageSize,
+    ordering: "-added",
+    exclude_additions: true,
+    genres: genreSlug
+  }).catch(() => ({ results: [] }));
+}
+
 async function fetchPersonalPools(profile) {
   const preferredGenres = [...profile.genres.entries()]
     .sort((a, b) => b[1] - a[1])
@@ -758,16 +792,9 @@ async function fetchPersonalPools(profile) {
   if (!preferredGenres.length) return [];
 
   // The taste profile stores genre names; RAWG accepts slugs.
-  const requests = preferredGenres.map(name =>
-    fetchRAWG("games", {
-      page_size: 24,
-      ordering: "-added",
-      exclude_additions: true,
-      genres: name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
-    }).catch(() => ({ results: [] }))
+  const responses = await Promise.all(
+    preferredGenres.map(name => fetchGenreGames(toSlug(name), 24))
   );
-
-  const responses = await Promise.all(requests);
 
   return responses.flatMap(result => result.results || []);
 }
@@ -776,41 +803,17 @@ async function fetchPersonalPools(profile) {
 async function buildMixFeed() {
   const profile = getTasteProfile();
 
-  const genreSlugs = [
-    "action",
-    "adventure",
-    "indie",
-    "role-playing-games-rpg",
-    "strategy",
-    "shooter",
-    "platformer",
-    "puzzle",
-    "simulation",
-    "racing",
-    "sports",
-    "casual"
-  ];
-
-  const genreOffset = mixSeed % genreSlugs.length;
+  const genreOffset = mixSeed % VARIETY_GENRES.length;
   const popularPage = 1 + (mixSeed % 3);
 
   const rotatingGenres = [0, 1, 2].map(
-    step => genreSlugs[(genreOffset + step * 3) % genreSlugs.length]
+    step => VARIETY_GENRES[(genreOffset + step * 3) % VARIETY_GENRES.length]
   );
 
   const [popularGames, personalGames, varietyResponses] = await Promise.all([
     fetchDiscoverPool(popularPage),
     fetchPersonalPools(profile),
-    Promise.all(
-      rotatingGenres.map(genre =>
-        fetchRAWG("games", {
-          page_size: 20,
-          ordering: "-added",
-          exclude_additions: true,
-          genres: genre
-        }).catch(() => ({ results: [] }))
-      )
-    )
+    Promise.all(rotatingGenres.map(genre => fetchGenreGames(genre, 20)))
   ]);
 
   const varietyGames = varietyResponses.flatMap(result => result.results || []);
@@ -1143,7 +1146,7 @@ function renderGameCards(games, mode = "discover", { hasItems = false } = {}) {
   if (!games.length) {
     let title;
     let message;
-    let button = "";
+    let button;
 
     if (mode === "discover") {
       title = "No games found";
@@ -1341,7 +1344,7 @@ function loadSavedList(status) {
 
 /* -------------------- GAME DETAILS -------------------- */
 
-async function getCachedDetails(id) {
+function getCachedDetails(id) {
   const key = String(id);
 
   if (!detailCache.has(key)) {
@@ -1358,7 +1361,7 @@ async function getCachedDetails(id) {
   return detailCache.get(key);
 }
 
-async function getCachedScreenshots(id) {
+function getCachedScreenshots(id) {
   const key = String(id);
 
   if (!screenshotCache.has(key)) {
@@ -1823,72 +1826,63 @@ gamesGrid.addEventListener("click", async event => {
 
   const { action, id } = button.dataset;
 
-  if (action === "retry") {
-    renderCurrentPage();
-    return;
-  }
+  switch (action) {
+    case "retry":
+      renderCurrentPage();
+      break;
 
-  if (action === "go-discover") {
-    changePage("discover");
-    return;
-  }
+    case "go-discover":
+      changePage("discover");
+      break;
 
-  if (action === "reset") {
-    resetFilters();
-    renderCurrentPage();
-    return;
-  }
+    case "reset":
+      resetFilters();
+      renderCurrentPage();
+      break;
 
-  if (action === "back") {
-    requestBack();
-    return;
-  }
+    case "back":
+      requestBack();
+      break;
 
-  if (action === "details") {
-    await openGameDetails(id);
-    return;
-  }
+    case "details":
+      await openGameDetails(id);
+      break;
 
-  if (action === "retry-details") {
-    await openGameDetails(id, { push: false });
-    return;
-  }
+    case "retry-details":
+      await openGameDetails(id, { push: false });
+      break;
 
-  if (action === "toggle-priority") {
-    await togglePriority(id);
-    return;
-  }
+    case "toggle-priority":
+      await togglePriority(id);
+      break;
 
-  if (action === "rate") {
-    setRating(id, Number(button.dataset.value));
-    return;
-  }
+    case "rate":
+      setRating(id, Number(button.dataset.value));
+      break;
 
-  if (action === "add" || action === "add-completed") {
-    try {
-      addGame(
-        await resolveGame(id),
-        action === "add-completed" ? "completed" : "plan"
-      );
-    } catch (error) {
-      showNotice(error.message);
-    }
+    case "add":
+    case "add-completed":
+      try {
+        addGame(
+          await resolveGame(id),
+          action === "add-completed" ? "completed" : "plan"
+        );
+      } catch (error) {
+        showNotice(error.message);
+      }
+      break;
 
-    return;
-  }
+    case "complete":
+      changeGameStatus(id, "completed");
+      break;
 
-  if (action === "complete") {
-    changeGameStatus(id, "completed");
-    return;
-  }
+    case "move-to-plan":
+      changeGameStatus(id, "plan");
+      break;
 
-  if (action === "move-to-plan") {
-    changeGameStatus(id, "plan");
-    return;
-  }
-
-  if (action === "remove") {
-    removeSavedGame(id);
+    case "remove":
+      removeSavedGame(id);
+      break;
   }
 });
 

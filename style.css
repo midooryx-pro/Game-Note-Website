@@ -294,7 +294,6 @@ body.light-theme .button-quiet {
 
 .hero-copy {
   min-width: 0;
-  overflow: visible;
 }
 
 .eyebrow {
@@ -321,10 +320,8 @@ body.light-theme .button-quiet {
 }
 
 .hero h1 {
-  max-width: 100%;
   margin: 16px 0 17px;
   padding-right: .14em;
-  overflow: visible;
   font-size: clamp(44px, 5.5vw, 76px);
   font-weight: 820;
   line-height: .99;
@@ -468,10 +465,7 @@ body.light-theme .nav-indicator {
   transition: color .2s ease;
 }
 
-.nav-button:hover {
-  color: var(--text);
-}
-
+.nav-button:hover,
 .nav-button.active {
   color: var(--text);
 }
@@ -1516,7 +1510,6 @@ body.light-theme .gn-detail {
   }
 
   .main-nav {
-    display: flex;
     width: 100%;
     gap: 1px;
   }

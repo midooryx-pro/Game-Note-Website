@@ -1,6 +1,15 @@
 // Runs on Vercel's server. It adds the secret RAWG key so visitors never see it.
 // The site calls it like this: /api/rawg?path=games/3498&page=1
+
+// Only allow the RAWG requests Game Note actually uses.
+const ALLOWED_ENDPOINTS = /^(games|games\/\d+|games\/\d+\/screenshots|genres)$/;
+
 module.exports = async (req, res) => {
+  if (req.method !== "GET") {
+    res.setHeader("Allow", "GET");
+    return res.status(405).json({ error: "Method not allowed." });
+  }
+
   const key = process.env.RAWG_API_KEY;
 
   if (!key) {
@@ -15,10 +24,7 @@ module.exports = async (req, res) => {
   const endpoint = (incoming.searchParams.get("path") || "")
     .replace(/^\/+|\/+$/g, "");
 
-  // Only allow the RAWG requests Game Note actually uses.
-  const allowed = /^(games|games\/\d+|games\/\d+\/screenshots|genres)$/;
-
-  if (!allowed.test(endpoint)) {
+  if (!ALLOWED_ENDPOINTS.test(endpoint)) {
     return res.status(400).json({ error: `Endpoint not allowed: "${endpoint}"` });
   }
 
@@ -38,8 +44,10 @@ module.exports = async (req, res) => {
     const response = await fetch(url);
     const data = await response.json().catch(() => ({}));
 
-    // Cache answers for 5 minutes so you use fewer RAWG requests.
-    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
+    // Cache successful answers for 5 minutes so you use fewer RAWG requests.
+    if (response.ok) {
+      res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
+    }
 
     return res.status(response.status).json(data);
   } catch {
