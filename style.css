@@ -685,29 +685,6 @@ body.light-theme .nav-count {
   gap: 20px;
 }
 
-/* Section titles on the Discover mix */
-.gn-section-heading {
-  grid-column: 1 / -1;
-  margin-top: 16px;
-}
-
-.gn-section-heading:first-child {
-  margin-top: 0;
-}
-
-.gn-section-heading h3 {
-  margin: 0 0 4px;
-  font-size: 19px;
-  font-weight: 760;
-  letter-spacing: -.04em;
-}
-
-.gn-section-heading p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-
 /* ==================== GAME CARDS ==================== */
 
 .gn-game-card {
@@ -896,6 +873,7 @@ body.light-theme .gn-game-card {
   letter-spacing: -.02em;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .gn-title-link {
@@ -1486,10 +1464,6 @@ body.light-theme .gn-detail {
 }
 
 /* "Games you might also like" */
-.gn-similar-intro {
-  margin: -6px 0 16px;
-}
-
 .gn-similar-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));

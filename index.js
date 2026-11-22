@@ -3,9 +3,9 @@
   RAWG-powered game discovery and personal library.
 
   - Library key preserved: gameNoteSavedGames (your saved games carry over)
-  - Discover mix: labeled sections (for you, popular now, acclaimed, hidden gems)
+  - Discover mix: one feed blending your taste, popular now, acclaimed and hidden gems
   - Discover hides low-quality entries (no cover, symbol names, almost no players)
-  - Grid / list view (list view is numbered), remembered between visits
+  - Grid / list view (list view is numbered), remembered separately for each page
   - Game details end with "Games you might also like"
   - Sort options change per page; filters ask RAWG on Discover and
     filter your own list on Your Plan / Completed
@@ -18,9 +18,9 @@
 const API_BASE = `${window.location.origin}/api/rawg`;
 const STORAGE_KEY = "gameNoteSavedGames";
 const THEME_KEY = "gameNoteTheme";
-const VIEW_KEY = "gameNoteView";
+const VIEWS_KEY = "gameNoteViews";
 const PAGE_SIZE = 24;
-const SECTION_SIZE = 12; // games per Discover section
+const PICKS_PER_SOURCE = 12; // games taken from each source of the Discover mix
 const SIMILAR_SIZE = 8; // games in "you might also like"
 const MAX_SEARCH_PAGES = 100;
 const MAX_BROWSE_PAGES = 12; // deeper pages are mostly low-quality entries
@@ -105,7 +105,6 @@ const clearButton = $("#clear-btn");
 
 let currentPage = "discover";
 let currentView = "grid"; // "grid" or "details"
-let viewMode = "grid"; // card layout: "grid" or "list"
 let currentApiPage = 1;
 let lastApiPage = 1;
 let searchTimer;
@@ -113,10 +112,16 @@ let requestNumber = 0;
 let mixSeed = Math.floor(Math.random() * 2 ** 32);
 let currentDetailsId = null;
 let currentDiscoverGames = [];
-let currentDiscoverSections = [];
 let currentDiscoverMode = "mix"; // "mix" or "browse"
 let currentSimilarGames = [];
 let gridScroll = 0;
+
+// Card layout ("grid" or "list"), remembered separately for each page.
+const viewModes = {
+  discover: "grid",
+  plan: "grid",
+  completed: "grid"
+};
 
 const detailCache = new Map();
 const screenshotCache = new Map();
@@ -154,6 +159,20 @@ function uniqueById(games) {
     seen.add(String(game.id));
     return true;
   });
+}
+
+// Takes one item from each list in turn, so no source ends up in a block.
+function interleave(lists) {
+  const result = [];
+  const longest = Math.max(0, ...lists.map(list => list.length));
+
+  for (let i = 0; i < longest; i++) {
+    lists.forEach(list => {
+      if (i < list.length) result.push(list[i]);
+    });
+  }
+
+  return result;
 }
 
 function toSlug(name) {
@@ -305,7 +324,7 @@ async function fetchRAWG(endpoint, params = {}) {
 }
 
 // Fetches a list of games (popular first). A failed request gives an empty list,
-// so one broken request never empties a whole section. Results are cached in memory.
+// so one broken request never empties the whole feed. Results are cached in memory.
 function fetchGameList(params) {
   const key = JSON.stringify(params);
 
@@ -717,32 +736,44 @@ function scrollToFeed() {
 
 /* -------------------- GRID / LIST VIEW -------------------- */
 
-// The list layout only applies to the games lists, never to the details page.
+// Applies the current page's layout. The list layout only applies to the
+// games lists, never to the details page, and the switch hides on details.
 function syncGridLayout() {
+  const mode = viewModes[currentPage];
   const isGrid = currentView === "grid";
 
-  gamesGrid.classList.toggle("is-list", viewMode === "list" && isGrid);
+  gamesGrid.classList.toggle("is-list", mode === "list" && isGrid);
   viewToggle.hidden = !isGrid;
-}
-
-function applyViewMode(mode) {
-  viewMode = mode === "list" ? "list" : "grid";
 
   viewButtons.forEach(button => {
-    button.setAttribute("aria-pressed", String(button.dataset.view === viewMode));
+    button.setAttribute("aria-pressed", String(button.dataset.view === mode));
   });
-
-  syncGridLayout();
 }
 
+// Changes the layout of the page you're on; the other pages keep theirs.
 function setViewMode(mode) {
-  applyViewMode(mode);
+  viewModes[currentPage] = mode === "list" ? "list" : "grid";
+  syncGridLayout();
 
   try {
-    localStorage.setItem(VIEW_KEY, viewMode);
+    localStorage.setItem(VIEWS_KEY, JSON.stringify(viewModes));
   } catch {
     // The layout still switches if storage is unavailable.
   }
+}
+
+function initializeViewModes() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(VIEWS_KEY) || "{}");
+
+    Object.keys(viewModes).forEach(page => {
+      if (stored?.[page] === "list") viewModes[page] = "list";
+    });
+  } catch {
+    // Every page starts as a grid.
+  }
+
+  syncGridLayout();
 }
 
 /* -------------------- PERSONALIZATION -------------------- */
@@ -802,12 +833,12 @@ function tasteScore(game, profile) {
 
 /* -------------------- DISCOVER FEED -------------------- */
 
-// The default Discover page: labeled sections instead of one random pile.
+// The default Discover page: several sources blended into one feed.
 async function buildMixFeed() {
   const profile = getTasteProfile();
   const savedIds = getSavedIds();
   const hasTaste = profile.topGenres.length > 0;
-  const used = new Set(); // a game appears in only one section
+  const used = new Set(); // a game is only picked once
   const seed = mixSeed;
 
   const isUsable = game =>
@@ -821,7 +852,7 @@ async function buildMixFeed() {
       .filter(isUsable)
       .map(game => ({ game, score: scoreOf(game) }))
       .sort((a, b) => b.score - a.score)
-      .slice(0, SECTION_SIZE)
+      .slice(0, PICKS_PER_SOURCE)
       .map(item => item.game);
 
     chosen.forEach(game => used.add(String(game.id)));
@@ -859,63 +890,42 @@ async function buildMixFeed() {
     fetchGameList({ metacritic: "75,100", page_size: 40, page: 3 + ((seed >>> 6) % 4) })
   ]);
 
-  const sections = [];
-
-  const addSection = (title, description, games) => {
-    if (games.length >= 4) sections.push({ title, description, games });
-  };
-
-  if (hasTaste) {
-    addSection(
-      `Because you like ${profile.topGenres.join(" & ")}`,
-      "Matched to the games in your lists.",
-      pick(personal, game =>
+  // Picked in this order so your taste gets first choice of any shared game.
+  const forYou = hasTaste
+    ? pick(personal, game =>
         tasteScore(game, profile) +
         popularityScore(game) * 0.8 +
         jitter(game) * 8
       )
-    );
-  }
+    : [];
 
-  addSection(
-    "Popular right now",
-    "The most-added games from the past year.",
-    pick(now, game => popularityScore(game) + jitter(game) * 10)
+  const popularNow = pick(now, game =>
+    popularityScore(game) + jitter(game) * 10
   );
 
-  if (!hasTaste) {
-    addSection(
-      "All-time favorites",
-      "The games players add to their libraries most.",
-      pick(classics, game => popularityScore(game) + jitter(game) * 10)
-    );
-  }
+  const allTime = hasTaste
+    ? []
+    : pick(classics, game => popularityScore(game) + jitter(game) * 10);
 
-  addSection(
-    "Critically acclaimed",
-    "Top Metascores that plenty of people actually play.",
-    pick(acclaimed, game =>
-      (getMetascore(game) || 85) * 1.2 +
-      popularityScore(game) * 0.6 +
-      jitter(game) * 10
-    )
+  const critics = pick(acclaimed, game =>
+    (getMetascore(game) || 85) * 1.2 +
+    popularityScore(game) * 0.6 +
+    jitter(game) * 10
   );
 
-  addSection(
-    "Hidden gems",
-    "Well-reviewed games that fly under the radar.",
-    pick(gems, game =>
-      (getMetascore(game) || 75) * 0.8 +
-      popularityScore(game) * 0.25 +
-      jitter(game) * 14
-    )
+  const hidden = pick(gems, game =>
+    (getMetascore(game) || 75) * 0.8 +
+    popularityScore(game) * 0.25 +
+    jitter(game) * 14
   );
 
-  if (!sections.length) {
+  const games = interleave([forYou, popularNow, allTime, critics, hidden]);
+
+  if (!games.length) {
     throw new Error("Couldn't load any games right now. Please try again.");
   }
 
-  return { sections, games: sections.flatMap(section => section.games) };
+  return { games };
 }
 
 // Search / filters / sorting: RAWG does the work, so results are real and paged.
@@ -1056,17 +1066,13 @@ function getSimilarGames(game) {
   return similarPending.get(key);
 }
 
-function similarSectionHTML(game, list) {
+function similarSectionHTML(list) {
   // Nothing found: leave the section out entirely.
   if (list && !list.length) return "";
 
   return `
     <section class="gn-detail-section" id="similar-section">
       <h3>Games you might also like</h3>
-      <p class="gn-muted gn-similar-intro">
-        Picked from the genres and themes of ${escapeHTML(game.name)}.
-        Add any of them straight to your lists.
-      </p>
       <div class="gn-similar-grid" id="similar-grid">
         ${
           list
@@ -1392,59 +1398,23 @@ function renderGameCards(games, mode = "discover", { hasItems = false, startInde
   gamesGrid.innerHTML = cardsHTML(games, startIndex);
 }
 
-// The Discover mix: a heading for each section, numbering runs straight through.
-function renderSections(sections) {
-  syncGridLayout();
-
-  const savedMap = buildSavedMap();
-  let count = 0;
-
-  gamesGrid.innerHTML = sections.map(section => {
-    const html = `
-      <div class="gn-section-heading">
-        <h3>${escapeHTML(section.title)}</h3>
-        <p>${escapeHTML(section.description)}</p>
-      </div>
-      ${cardsHTML(section.games, count, savedMap)}
-    `;
-
-    count += section.games.length;
-    return html;
-  }).join("");
-}
-
 /* -------------------- DISCOVER PAGE -------------------- */
 
 // Draws Discover from the games already in memory (no new request).
 function renderDiscoverGames() {
   const filters = getFilterState();
   const browse = currentDiscoverMode === "browse";
-  let total;
 
-  if (browse) {
-    renderGameCards(currentDiscoverGames, "discover", {
-      startIndex: (currentApiPage - 1) * PAGE_SIZE
-    });
-    total = currentDiscoverGames.length;
-  } else {
-    // Games you saved from the mix drop out of it.
-    const savedIds = getSavedIds();
+  // Games you saved from the mix drop out of it; search results stay as they are.
+  const savedIds = getSavedIds();
 
-    const sections = currentDiscoverSections
-      .map(section => ({
-        ...section,
-        games: section.games.filter(game => !savedIds.has(String(game.id)))
-      }))
-      .filter(section => section.games.length);
+  const visible = browse
+    ? currentDiscoverGames
+    : currentDiscoverGames.filter(game => !savedIds.has(String(game.id)));
 
-    total = sections.reduce((sum, section) => sum + section.games.length, 0);
-
-    if (sections.length) {
-      renderSections(sections);
-    } else {
-      renderGameCards([], "discover");
-    }
-  }
+  renderGameCards(visible, "discover", {
+    startIndex: browse ? (currentApiPage - 1) * PAGE_SIZE : 0
+  });
 
   gridTitle.textContent = "Discover";
 
@@ -1457,10 +1427,10 @@ function renderDiscoverGames() {
   } else {
     feedEyebrow.textContent = "YOUR NEXT FAVORITE";
     feedDescription.textContent =
-      "Fresh picks sorted by what's popular, acclaimed, and shaped by your taste.";
+      "Fresh picks mixing what's popular, acclaimed, and shaped by your taste.";
   }
 
-  resultsCount.textContent = countLabel(total);
+  resultsCount.textContent = countLabel(visible.length);
 
   if (browse && lastApiPage > 1) {
     pagination.hidden = false;
@@ -1498,16 +1468,10 @@ async function loadDiscover() {
 
     currentDiscoverMode = browse ? "browse" : "mix";
 
-    if (browse) {
-      // Searching shows everything; filters and sorting hide low-quality entries.
-      currentDiscoverSections = [];
-      currentDiscoverGames = filters.query
-        ? feed.games
-        : feed.games.filter(isQualityGame);
-    } else {
-      currentDiscoverSections = feed.sections;
-      currentDiscoverGames = feed.games;
-    }
+    // Searching shows everything; filters and sorting hide low-quality entries.
+    currentDiscoverGames = browse && !filters.query
+      ? feed.games.filter(isQualityGame)
+      : feed.games;
 
     renderDiscoverGames();
   } catch (error) {
@@ -1867,7 +1831,7 @@ async function openGameDetails(id, { push = true, silent = false } = {}) {
 
         ${renderJournal(game, saved)}
         ${renderScreenshots(screenshots)}
-        ${similarSectionHTML(game, cachedSimilar)}
+        ${similarSectionHTML(cachedSimilar)}
       </article>
     `;
 
@@ -1958,9 +1922,10 @@ function changePage(page) {
     }
   });
 
-  // Each page has its own Sort options, and a search belongs to the page it was typed on.
+  // Each page has its own Sort options and layout, and a search belongs to the page it was typed on.
   buildSortOptions(page);
   searchBar.value = "";
+  syncGridLayout();
 
   renderCurrentPage();
   updateNavigationPill();
@@ -2260,14 +2225,6 @@ function initializeTheme() {
   }
 }
 
-function initializeViewMode() {
-  try {
-    applyViewMode(localStorage.getItem(VIEW_KEY));
-  } catch {
-    applyViewMode("grid");
-  }
-}
-
 function initializeYearFilter() {
   const currentYear = new Date().getFullYear();
 
@@ -2286,7 +2243,7 @@ window.addEventListener("pageshow", updateNavigationPill);
 document.fonts?.ready.then(updateNavigationPill);
 
 initializeTheme();
-initializeViewMode();
+initializeViewModes();
 initializeYearFilter();
 buildSortOptions("discover");
 fillSelect(platformFilter, PLATFORM_OPTIONS, "All platforms");
