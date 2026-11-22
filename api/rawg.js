@@ -2,7 +2,8 @@
 // The site calls it like this: /api/rawg?path=games/3498&page=1
 
 // Only allow the RAWG requests Game Note actually uses.
-const ALLOWED_ENDPOINTS = /^(games|games\/\d+|games\/\d+\/screenshots|genres)$/;
+const ALLOWED_ENDPOINTS =
+  /^(games|games\/\d+|games\/\d+\/screenshots|games\/\d+\/game-series|genres)$/;
 
 module.exports = async (req, res) => {
   if (req.method !== "GET") {

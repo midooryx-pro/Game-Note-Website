@@ -125,10 +125,33 @@
           <p class="eyebrow" id="feed-eyebrow">YOUR NEXT FAVORITE</p>
           <h2 id="grid-title">Discover</h2>
           <p class="feed-description" id="feed-description">
-            Big-name favorites, fresh discoveries, and games shaped by your taste.
+            Popular favorites, unexpected picks, and games shaped by your taste.
           </p>
         </div>
-        <p class="results-count" id="results-count" aria-live="polite"></p>
+
+        <div class="feed-tools">
+          <p class="results-count" id="results-count" aria-live="polite"></p>
+
+          <div class="view-toggle" id="view-toggle" role="group" aria-label="Card layout">
+            <button class="view-button" data-view="grid" type="button"
+              aria-pressed="true" aria-label="Grid view" title="Grid view">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <rect x="1" y="1" width="6" height="6" rx="1.5"/>
+                <rect x="9" y="1" width="6" height="6" rx="1.5"/>
+                <rect x="1" y="9" width="6" height="6" rx="1.5"/>
+                <rect x="9" y="9" width="6" height="6" rx="1.5"/>
+              </svg>
+            </button>
+            <button class="view-button" data-view="list" type="button"
+              aria-pressed="false" aria-label="List view" title="List view">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <rect x="1" y="2" width="14" height="3" rx="1.5"/>
+                <rect x="1" y="6.5" width="14" height="3" rx="1.5"/>
+                <rect x="1" y="11" width="14" height="3" rx="1.5"/>
+              </svg>
+            </button>
+          </div>
+        </div>
       </section>
 
       <div id="games-grid" class="games-grid" aria-live="polite"></div>

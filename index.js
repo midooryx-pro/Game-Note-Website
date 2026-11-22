@@ -3,8 +3,10 @@
   RAWG-powered game discovery and personal library.
 
   - Library key preserved: gameNoteSavedGames (your saved games carry over)
-  - Discover mix: popularity + personal taste + rotating genre pools
+  - Discover mix: labeled sections (for you, popular now, acclaimed, hidden gems)
   - Discover hides low-quality entries (no cover, symbol names, almost no players)
+  - Grid / list view (list view is numbered), remembered between visits
+  - Game details end with "Games you might also like"
   - Sort options change per page; filters ask RAWG on Discover and
     filter your own list on Your Plan / Completed
   - Notes + star rating per saved game, undo, backup, keyboard shortcuts
@@ -16,9 +18,10 @@
 const API_BASE = `${window.location.origin}/api/rawg`;
 const STORAGE_KEY = "gameNoteSavedGames";
 const THEME_KEY = "gameNoteTheme";
+const VIEW_KEY = "gameNoteView";
 const PAGE_SIZE = 24;
-const DISCOVER_POOL_SIZE = 60;
-const MIX_SIZE = 48;
+const SECTION_SIZE = 12; // games per Discover section
+const SIMILAR_SIZE = 8; // games in "you might also like"
 const MAX_SEARCH_PAGES = 100;
 const MAX_BROWSE_PAGES = 12; // deeper pages are mostly low-quality entries
 
@@ -63,22 +66,6 @@ const PLATFORM_OPTIONS = [
   { value: "7", label: "Nintendo" }
 ];
 
-// Genres rotated through to add variety to the Discover mix.
-const VARIETY_GENRES = [
-  "action",
-  "adventure",
-  "indie",
-  "role-playing-games-rpg",
-  "strategy",
-  "shooter",
-  "platformer",
-  "puzzle",
-  "simulation",
-  "racing",
-  "sports",
-  "casual"
-];
-
 const pageTitles = {
   discover: "Discover",
   plan: "Your Plan",
@@ -109,6 +96,8 @@ const previousPageButton = $("#previous-page");
 const nextPageButton = $("#next-page");
 const pageIndicator = $("#page-indicator");
 const resultsCount = $("#results-count");
+const viewToggle = $("#view-toggle");
+const viewButtons = document.querySelectorAll(".view-button");
 const exportButton = $("#export-btn");
 const importButton = $("#import-btn");
 const importInput = $("#import-input");
@@ -116,6 +105,7 @@ const clearButton = $("#clear-btn");
 
 let currentPage = "discover";
 let currentView = "grid"; // "grid" or "details"
+let viewMode = "grid"; // card layout: "grid" or "list"
 let currentApiPage = 1;
 let lastApiPage = 1;
 let searchTimer;
@@ -123,12 +113,16 @@ let requestNumber = 0;
 let mixSeed = Math.floor(Math.random() * 2 ** 32);
 let currentDetailsId = null;
 let currentDiscoverGames = [];
+let currentDiscoverSections = [];
 let currentDiscoverMode = "mix"; // "mix" or "browse"
+let currentSimilarGames = [];
 let gridScroll = 0;
 
 const detailCache = new Map();
 const screenshotCache = new Map();
 const discoveryCache = new Map();
+const similarCache = new Map(); // game id -> finished list of similar games
+const similarPending = new Map(); // game id -> request still running
 
 /* -------------------- SAFE HELPERS -------------------- */
 
@@ -162,24 +156,17 @@ function uniqueById(games) {
   });
 }
 
-// Seeded shuffle so a "New mix" is different but stable while you browse.
-function shuffleArray(items) {
-  const result = [...items];
-
-  for (let i = result.length - 1; i > 0; i--) {
-    mixSeed = (mixSeed * 1664525 + 1013904223) >>> 0;
-    const j = mixSeed % (i + 1);
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-
-  return result;
-}
-
 function toSlug(name) {
   return String(name)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+// Stable 0–1 number per game for the current mix, so "New mix" reshuffles
+// the order without the feed changing while you browse.
+function jitter(game) {
+  return ((((Number(game.id) || 0) * 2654435761) + mixSeed) >>> 0) % 1000 / 1000;
 }
 
 function getGameGenres(game) {
@@ -317,6 +304,35 @@ async function fetchRAWG(endpoint, params = {}) {
   return response.json();
 }
 
+// Fetches a list of games (popular first). A failed request gives an empty list,
+// so one broken request never empties a whole section. Results are cached in memory.
+function fetchGameList(params) {
+  const key = JSON.stringify(params);
+
+  if (!discoveryCache.has(key)) {
+    discoveryCache.set(
+      key,
+      fetchRAWG("games", {
+        ordering: "-added",
+        exclude_additions: true,
+        ...params
+      })
+        .then(data => Array.isArray(data.results) ? data.results : [])
+        .catch(() => {
+          discoveryCache.delete(key);
+          return [];
+        })
+    );
+
+    // Keep the in-memory cache bounded.
+    if (discoveryCache.size > 40) {
+      discoveryCache.delete(discoveryCache.keys().next().value);
+    }
+  }
+
+  return discoveryCache.get(key);
+}
+
 /* -------------------- SAVED LIBRARY -------------------- */
 
 function getSavedGames() {
@@ -361,9 +377,12 @@ function updateSavedGame(id, update) {
 
 // Finds full game info from whatever we already have, or asks RAWG.
 async function resolveGame(id) {
+  const match = game => String(game.id) === String(id);
+
   return (
     findSavedGame(id) ||
-    currentDiscoverGames.find(game => String(game.id) === String(id)) ||
+    currentDiscoverGames.find(match) ||
+    currentSimilarGames.find(match) ||
     await getCachedDetails(id)
   );
 }
@@ -663,6 +682,8 @@ function showNotice(message, action) {
 }
 
 function showSkeletons(count = 10) {
+  syncGridLayout();
+
   gamesGrid.innerHTML = Array.from({ length: count }, () => `
     <div class="gn-skeleton" aria-hidden="true">
       <div class="gn-skeleton-cover"></div>
@@ -694,25 +715,67 @@ function scrollToFeed() {
   $("#main-content").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+/* -------------------- GRID / LIST VIEW -------------------- */
+
+// The list layout only applies to the games lists, never to the details page.
+function syncGridLayout() {
+  const isGrid = currentView === "grid";
+
+  gamesGrid.classList.toggle("is-list", viewMode === "list" && isGrid);
+  viewToggle.hidden = !isGrid;
+}
+
+function applyViewMode(mode) {
+  viewMode = mode === "list" ? "list" : "grid";
+
+  viewButtons.forEach(button => {
+    button.setAttribute("aria-pressed", String(button.dataset.view === viewMode));
+  });
+
+  syncGridLayout();
+}
+
+function setViewMode(mode) {
+  applyViewMode(mode);
+
+  try {
+    localStorage.setItem(VIEW_KEY, viewMode);
+  } catch {
+    // The layout still switches if storage is unavailable.
+  }
+}
+
 /* -------------------- PERSONALIZATION -------------------- */
 
+// What the library says about your taste: genres weighted by how much you care.
 function getTasteProfile() {
   const genres = new Map();
-  const platforms = new Map();
+  let total = 0;
 
   getSavedGames().forEach(game => {
-    const weight = game.status === "plan" ? 1.35 : 1;
+    let weight = game.status === "plan" ? 1.35 : 1;
+
+    if (game.priority) weight += 0.5;
+
+    if (game.rating >= 4) {
+      weight += 0.75;
+    } else if (game.rating > 0 && game.rating <= 2) {
+      weight *= 0.3;
+    }
+
+    total += weight;
 
     getGameGenres(game).forEach(name => {
       genres.set(name, (genres.get(name) || 0) + weight);
     });
-
-    getGamePlatforms(game).forEach(name => {
-      platforms.set(name, (platforms.get(name) || 0) + weight);
-    });
   });
 
-  return { genres, platforms };
+  const topGenres = [...genres.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2)
+    .map(([name]) => name);
+
+  return { genres, total, topGenres };
 }
 
 function popularityScore(game) {
@@ -724,153 +787,135 @@ function popularityScore(game) {
     Math.log10(ratingsCount + 1) * 5;
 }
 
+// 0–40: how well a game's genres match what the library says you like.
 function tasteScore(game, profile) {
-  let score = 0;
+  if (!profile.total) return 0;
+
+  let matched = 0;
 
   getGameGenres(game).forEach(name => {
-    score += (profile.genres.get(name) || 0) * 7;
+    matched += profile.genres.get(name) || 0;
   });
 
-  getGamePlatforms(game).forEach(name => {
-    score += (profile.platforms.get(name) || 0) * 2;
-  });
-
-  return score;
-}
-
-function isEstablishedGame(game) {
-  const added = Number(game.added || 0);
-  const ratingsCount = Number(game.ratings_count || 0);
-
-  return added >= 1000 || ratingsCount >= 150;
+  return Math.min(matched / profile.total, 2) * 20;
 }
 
 /* -------------------- DISCOVER FEED -------------------- */
 
-async function fetchDiscoverPool(page = 1) {
-  const cacheKey = String(page);
-
-  if (discoveryCache.has(cacheKey)) {
-    return discoveryCache.get(cacheKey);
-  }
-
-  const data = await fetchRAWG("games", {
-    page,
-    page_size: DISCOVER_POOL_SIZE,
-    ordering: "-added",
-    exclude_additions: true
-  });
-
-  const games = Array.isArray(data.results) ? data.results : [];
-
-  discoveryCache.set(cacheKey, games);
-
-  // Keep the in-memory cache bounded.
-  if (discoveryCache.size > 30) {
-    discoveryCache.delete(discoveryCache.keys().next().value);
-  }
-
-  return games;
-}
-
-// Fetches popular games for one genre; a failed request just returns nothing.
-function fetchGenreGames(genreSlug, pageSize) {
-  return fetchRAWG("games", {
-    page_size: pageSize,
-    ordering: "-added",
-    exclude_additions: true,
-    genres: genreSlug
-  }).catch(() => ({ results: [] }));
-}
-
-async function fetchPersonalPools(profile) {
-  const preferredGenres = [...profile.genres.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 2)
-    .map(([name]) => name);
-
-  if (!preferredGenres.length) return [];
-
-  // The taste profile stores genre names; RAWG accepts slugs.
-  const responses = await Promise.all(
-    preferredGenres.map(name => fetchGenreGames(toSlug(name), 24))
-  );
-
-  return responses.flatMap(result => result.results || []);
-}
-
-// The "Picked for you" mix: popular + personal + a little variety.
+// The default Discover page: labeled sections instead of one random pile.
 async function buildMixFeed() {
   const profile = getTasteProfile();
-
-  const genreOffset = mixSeed % VARIETY_GENRES.length;
-  const popularPage = 1 + (mixSeed % 3);
-
-  const rotatingGenres = [0, 1, 2].map(
-    step => VARIETY_GENRES[(genreOffset + step * 3) % VARIETY_GENRES.length]
-  );
-
-  const [popularGames, personalGames, varietyResponses] = await Promise.all([
-    fetchDiscoverPool(popularPage),
-    fetchPersonalPools(profile),
-    Promise.all(rotatingGenres.map(genre => fetchGenreGames(genre, 20)))
-  ]);
-
-  const varietyGames = varietyResponses.flatMap(result => result.results || []);
   const savedIds = getSavedIds();
+  const hasTaste = profile.topGenres.length > 0;
+  const used = new Set(); // a game appears in only one section
+  const seed = mixSeed;
 
   const isUsable = game =>
-    !savedIds.has(String(game.id)) && isQualityGame(game);
+    !savedIds.has(String(game.id)) &&
+    !used.has(String(game.id)) &&
+    isQualityGame(game);
 
-  const availablePopular = uniqueById(popularGames).filter(isUsable);
+  // Scores the usable games, keeps the best few, and marks them as used.
+  const pick = (games, scoreOf) => {
+    const chosen = uniqueById(games)
+      .filter(isUsable)
+      .map(game => ({ game, score: scoreOf(game) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, SECTION_SIZE)
+      .map(item => item.game);
 
-  const availablePersonal = uniqueById([...personalGames, ...varietyGames])
-    .filter(isUsable);
+    chosen.forEach(game => used.add(String(game.id)));
+    return chosen;
+  };
 
-  const established = availablePopular.filter(isEstablishedGame);
-  const broaderPopular = availablePopular.filter(game => !isEstablishedGame(game));
-  const mainPool = established.length >= 8 ? established : availablePopular;
+  const topSlugs = profile.topGenres.map(toSlug);
+  const personalRequests = [];
 
-  const personalizedRanked = availablePersonal
-    .map(game => ({
-      game,
-      score: tasteScore(game, profile) + popularityScore(game)
-    }))
-    .sort((a, b) => b.score - a.score)
-    .map(item => item.game);
+  if (topSlugs.length > 1) {
+    personalRequests.push(fetchGameList({
+      genres: topSlugs.join(","),
+      page_size: 30,
+      page: 1 + (seed % 2)
+    }));
+  }
 
-  const mainShuffled = shuffleArray(mainPool);
-  const personalShuffled = shuffleArray(personalizedRanked);
-  const broadShuffled = shuffleArray(broaderPopular);
+  topSlugs.forEach((slug, index) => {
+    personalRequests.push(fetchGameList({
+      genres: slug,
+      page_size: 30,
+      page: 1 + ((seed >>> (4 + index)) % 2)
+    }));
+  });
 
-  const popularTarget = Math.ceil(MIX_SIZE * 0.58);
-  const personalTarget = Math.ceil(MIX_SIZE * 0.30);
-  const broadTarget = MIX_SIZE - popularTarget - personalTarget;
-
-  const selected = [
-    ...mainShuffled.slice(0, popularTarget),
-    ...personalShuffled.slice(0, personalTarget),
-    ...broadShuffled.slice(0, broadTarget)
-  ];
-
-  const combined = uniqueById([
-    ...selected,
-    ...mainShuffled,
-    ...personalShuffled,
-    ...broadShuffled
+  const [personal, now, classics, acclaimed, gems] = await Promise.all([
+    Promise.all(personalRequests).then(lists => lists.flat()),
+    fetchGameList({
+      dates: `${dateString(365)},${dateString(0)}`,
+      page_size: 40,
+      page: 1 + (seed % 2)
+    }),
+    hasTaste ? [] : fetchGameList({ page_size: 40, page: 1 + ((seed >>> 2) % 3) }),
+    fetchGameList({ metacritic: "85,100", page_size: 40, page: 1 + ((seed >>> 3) % 3) }),
+    fetchGameList({ metacritic: "75,100", page_size: 40, page: 3 + ((seed >>> 6) % 4) })
   ]);
 
-  const ranked = combined
-    .map((game, index) => ({
-      game,
-      score: popularityScore(game) +
-        tasteScore(game, profile) +
-        ((index * 17 + mixSeed) % 13)
-    }))
-    .sort((a, b) => b.score - a.score)
-    .map(item => item.game);
+  const sections = [];
 
-  return { games: shuffleArray(ranked).slice(0, MIX_SIZE) };
+  const addSection = (title, description, games) => {
+    if (games.length >= 4) sections.push({ title, description, games });
+  };
+
+  if (hasTaste) {
+    addSection(
+      `Because you like ${profile.topGenres.join(" & ")}`,
+      "Matched to the games in your lists.",
+      pick(personal, game =>
+        tasteScore(game, profile) +
+        popularityScore(game) * 0.8 +
+        jitter(game) * 8
+      )
+    );
+  }
+
+  addSection(
+    "Popular right now",
+    "The most-added games from the past year.",
+    pick(now, game => popularityScore(game) + jitter(game) * 10)
+  );
+
+  if (!hasTaste) {
+    addSection(
+      "All-time favorites",
+      "The games players add to their libraries most.",
+      pick(classics, game => popularityScore(game) + jitter(game) * 10)
+    );
+  }
+
+  addSection(
+    "Critically acclaimed",
+    "Top Metascores that plenty of people actually play.",
+    pick(acclaimed, game =>
+      (getMetascore(game) || 85) * 1.2 +
+      popularityScore(game) * 0.6 +
+      jitter(game) * 10
+    )
+  );
+
+  addSection(
+    "Hidden gems",
+    "Well-reviewed games that fly under the radar.",
+    pick(gems, game =>
+      (getMetascore(game) || 75) * 0.8 +
+      popularityScore(game) * 0.25 +
+      jitter(game) * 14
+    )
+  );
+
+  if (!sections.length) {
+    throw new Error("Couldn't load any games right now. Please try again.");
+  }
+
+  return { sections, games: sections.flatMap(section => section.games) };
 }
 
 // Search / filters / sorting: RAWG does the work, so results are real and paged.
@@ -906,6 +951,153 @@ async function buildBrowseFeed(filters, page) {
   lastApiPage = Math.min(maxPages, Math.max(1, Math.ceil(total / PAGE_SIZE)));
 
   return { games: data.results || [] };
+}
+
+/* -------------------- SIMILAR GAMES -------------------- */
+
+// Finds games like this one: same series, genres and themes (tags),
+// then ranks them by how much they have in common.
+async function buildSimilarGames(game) {
+  const genreSlugs = (game.genres || [])
+    .map(item => item.slug)
+    .filter(Boolean)
+    .slice(0, 2);
+
+  // Skip tags that are too common ("Singleplayer") or too rare to find anything.
+  const tagSlugs = (game.tags || [])
+    .filter(tag => tag.language === "eng" && tag.games_count >= 600 && tag.games_count <= 60000)
+    .sort((a, b) => a.games_count - b.games_count)
+    .slice(0, 3)
+    .map(tag => tag.slug);
+
+  const requests = [
+    fetchRAWG(`games/${encodeURIComponent(game.id)}/game-series`, { page_size: 8 })
+      .then(data => data.results || [])
+      .catch(() => [])
+  ];
+
+  if (genreSlugs.length && tagSlugs.length) {
+    requests.push(fetchGameList({
+      genres: genreSlugs.join(","),
+      tags: tagSlugs.slice(0, 2).join(","),
+      page_size: 30
+    }));
+  }
+
+  if (tagSlugs.length) {
+    requests.push(fetchGameList({ tags: tagSlugs.join(","), page_size: 30 }));
+  }
+
+  if (genreSlugs.length) {
+    requests.push(fetchGameList({
+      genres: genreSlugs.join(","),
+      metacritic: "65,100",
+      page_size: 24
+    }));
+  }
+
+  const [series, ...others] = await Promise.all(requests);
+
+  const seriesIds = new Set(series.map(item => String(item.id)));
+  const myGenres = new Set(getGameGenres(game));
+  const myTags = new Set((game.tags || []).map(tag => tag.id));
+
+  const similarity = candidate => {
+    let score = 0;
+
+    getGameGenres(candidate).forEach(name => {
+      if (myGenres.has(name)) score += 5;
+    });
+
+    const sharedTags = (candidate.tags || []).filter(tag => myTags.has(tag.id)).length;
+    score += Math.min(sharedTags, 10) * 1.5;
+
+    if (seriesIds.has(String(candidate.id))) score += 25;
+
+    score += popularityScore(candidate) * 0.4;
+
+    const metascore = getMetascore(candidate);
+    if (metascore) score += Math.max(0, metascore - 60) * 0.25;
+
+    return score;
+  };
+
+  return uniqueById([...series, ...others.flat()])
+    .filter(candidate => String(candidate.id) !== String(game.id) && isQualityGame(candidate))
+    .map(candidate => ({ candidate, score: similarity(candidate) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, SIMILAR_SIZE)
+    .map(item => item.candidate);
+}
+
+function getSimilarGames(game) {
+  const key = String(game.id);
+
+  if (similarCache.has(key)) {
+    return Promise.resolve(similarCache.get(key));
+  }
+
+  if (!similarPending.has(key)) {
+    similarPending.set(
+      key,
+      buildSimilarGames(game)
+        .then(list => {
+          similarCache.set(key, list);
+          similarPending.delete(key);
+          return list;
+        })
+        .catch(error => {
+          similarPending.delete(key);
+          throw error;
+        })
+    );
+  }
+
+  return similarPending.get(key);
+}
+
+function similarSectionHTML(game, list) {
+  // Nothing found: leave the section out entirely.
+  if (list && !list.length) return "";
+
+  return `
+    <section class="gn-detail-section" id="similar-section">
+      <h3>Games you might also like</h3>
+      <p class="gn-muted gn-similar-intro">
+        Picked from the genres and themes of ${escapeHTML(game.name)}.
+        Add any of them straight to your lists.
+      </p>
+      <div class="gn-similar-grid" id="similar-grid">
+        ${
+          list
+            ? cardsHTML(list)
+            : `<div class="gn-loading">
+                <span class="gn-spinner" aria-hidden="true"></span>
+                <span>Finding similar games…</span>
+              </div>`
+        }
+      </div>
+    </section>
+  `;
+}
+
+// Fills the section once the games arrive (ignored if you already moved on).
+function fillSimilar(id, list) {
+  if (currentView !== "details" || currentDetailsId !== String(id)) return;
+
+  const section = $("#similar-section");
+  const grid = $("#similar-grid");
+
+  if (!section || !grid) return;
+
+  currentSimilarGames = list;
+
+  if (!list.length) {
+    section.remove();
+    return;
+  }
+
+  grid.innerHTML = cardsHTML(list);
 }
 
 /* -------------------- FILTERS AND SORTING -------------------- */
@@ -1075,7 +1267,8 @@ function cardActions(saved, id) {
     <button class="gn-button" data-action="add-completed" data-id="${id}" type="button">✓ Done</button>`;
 }
 
-function cardHTML(game, savedMap) {
+// `index` (0-based) adds the number shown in list view; leave it out for no number.
+function cardHTML(game, savedMap, index = null) {
   const id = escapeHTML(game.id);
   const name = escapeHTML(game.name);
   const saved = savedMap.get(String(game.id));
@@ -1097,8 +1290,14 @@ function cardHTML(game, savedMap) {
     }</span>`;
   }
 
+  const number = index === null
+    ? ""
+    : `<span class="gn-index" aria-hidden="true">${String(index + 1).padStart(2, "0")}</span>`;
+
   return `
     <article class="gn-game-card">
+      ${number}
+
       <div class="gn-cover-wrap">
         <button class="gn-cover-button"
           data-action="details" data-id="${id}" type="button"
@@ -1142,7 +1341,22 @@ function cardHTML(game, savedMap) {
   `;
 }
 
-function renderGameCards(games, mode = "discover", { hasItems = false } = {}) {
+function buildSavedMap() {
+  return new Map(getSavedGames().map(game => [String(game.id), game]));
+}
+
+// Cards for a list of games. `startIndex` turns on numbering (used in list view).
+function cardsHTML(games, startIndex = null, savedMap = buildSavedMap()) {
+  return games
+    .map((game, position) =>
+      cardHTML(game, savedMap, startIndex === null ? null : startIndex + position)
+    )
+    .join("");
+}
+
+function renderGameCards(games, mode = "discover", { hasItems = false, startIndex = 0 } = {}) {
+  syncGridLayout();
+
   if (!games.length) {
     let title;
     let message;
@@ -1175,11 +1389,28 @@ function renderGameCards(games, mode = "discover", { hasItems = false } = {}) {
     return;
   }
 
-  const savedMap = new Map(
-    getSavedGames().map(game => [String(game.id), game])
-  );
+  gamesGrid.innerHTML = cardsHTML(games, startIndex);
+}
 
-  gamesGrid.innerHTML = games.map(game => cardHTML(game, savedMap)).join("");
+// The Discover mix: a heading for each section, numbering runs straight through.
+function renderSections(sections) {
+  syncGridLayout();
+
+  const savedMap = buildSavedMap();
+  let count = 0;
+
+  gamesGrid.innerHTML = sections.map(section => {
+    const html = `
+      <div class="gn-section-heading">
+        <h3>${escapeHTML(section.title)}</h3>
+        <p>${escapeHTML(section.description)}</p>
+      </div>
+      ${cardsHTML(section.games, count, savedMap)}
+    `;
+
+    count += section.games.length;
+    return html;
+  }).join("");
 }
 
 /* -------------------- DISCOVER PAGE -------------------- */
@@ -1188,13 +1419,32 @@ function renderGameCards(games, mode = "discover", { hasItems = false } = {}) {
 function renderDiscoverGames() {
   const filters = getFilterState();
   const browse = currentDiscoverMode === "browse";
-  const savedIds = getSavedIds();
+  let total;
 
-  const visible = browse
-    ? currentDiscoverGames
-    : currentDiscoverGames.filter(game => !savedIds.has(String(game.id)));
+  if (browse) {
+    renderGameCards(currentDiscoverGames, "discover", {
+      startIndex: (currentApiPage - 1) * PAGE_SIZE
+    });
+    total = currentDiscoverGames.length;
+  } else {
+    // Games you saved from the mix drop out of it.
+    const savedIds = getSavedIds();
 
-  renderGameCards(visible, "discover");
+    const sections = currentDiscoverSections
+      .map(section => ({
+        ...section,
+        games: section.games.filter(game => !savedIds.has(String(game.id)))
+      }))
+      .filter(section => section.games.length);
+
+    total = sections.reduce((sum, section) => sum + section.games.length, 0);
+
+    if (sections.length) {
+      renderSections(sections);
+    } else {
+      renderGameCards([], "discover");
+    }
+  }
 
   gridTitle.textContent = "Discover";
 
@@ -1207,10 +1457,10 @@ function renderDiscoverGames() {
   } else {
     feedEyebrow.textContent = "YOUR NEXT FAVORITE";
     feedDescription.textContent =
-      "Popular favorites, unexpected picks, and games shaped by your taste.";
+      "Fresh picks sorted by what's popular, acclaimed, and shaped by your taste.";
   }
 
-  resultsCount.textContent = countLabel(visible.length);
+  resultsCount.textContent = countLabel(total);
 
   if (browse && lastApiPage > 1) {
     pagination.hidden = false;
@@ -1248,10 +1498,16 @@ async function loadDiscover() {
 
     currentDiscoverMode = browse ? "browse" : "mix";
 
-    // Searching shows everything; filters and sorting hide low-quality entries.
-    currentDiscoverGames = browse && !filters.query
-      ? feed.games.filter(isQualityGame)
-      : feed.games;
+    if (browse) {
+      // Searching shows everything; filters and sorting hide low-quality entries.
+      currentDiscoverSections = [];
+      currentDiscoverGames = filters.query
+        ? feed.games
+        : feed.games.filter(isQualityGame);
+    } else {
+      currentDiscoverSections = feed.sections;
+      currentDiscoverGames = feed.games;
+    }
 
     renderDiscoverGames();
   } catch (error) {
@@ -1490,6 +1746,7 @@ async function openGameDetails(id, { push = true, silent = false } = {}) {
 
   currentView = "details";
   currentDetailsId = String(id);
+  syncGridLayout();
 
   pagination.hidden = true;
 
@@ -1563,6 +1820,10 @@ async function openGameDetails(id, { push = true, silent = false } = {}) {
       ...(game.esrb_rating?.name ? [game.esrb_rating.name] : [])
     ];
 
+    // Already-loaded similar games show instantly (e.g. after adding one to a list).
+    const cachedSimilar = similarCache.get(String(game.id));
+    currentSimilarGames = cachedSimilar || [];
+
     gamesGrid.innerHTML = `
       ${backButton}
 
@@ -1606,10 +1867,17 @@ async function openGameDetails(id, { push = true, silent = false } = {}) {
 
         ${renderJournal(game, saved)}
         ${renderScreenshots(screenshots)}
+        ${similarSectionHTML(game, cachedSimilar)}
       </article>
     `;
 
     resultsCount.textContent = game.name;
+
+    if (!cachedSimilar) {
+      getSimilarGames(game)
+        .then(list => fillSimilar(game.id, list))
+        .catch(() => fillSimilar(game.id, []));
+    }
   } catch (error) {
     if (thisRequest !== requestNumber) return;
 
@@ -1730,6 +1998,12 @@ function refreshCurrentView() {
 navButtons.forEach(button => {
   button.addEventListener("click", () => {
     changePage(button.dataset.page);
+  });
+});
+
+viewButtons.forEach(button => {
+  button.addEventListener("click", () => {
+    setViewMode(button.dataset.view);
   });
 });
 
@@ -1986,6 +2260,14 @@ function initializeTheme() {
   }
 }
 
+function initializeViewMode() {
+  try {
+    applyViewMode(localStorage.getItem(VIEW_KEY));
+  } catch {
+    applyViewMode("grid");
+  }
+}
+
 function initializeYearFilter() {
   const currentYear = new Date().getFullYear();
 
@@ -2004,6 +2286,7 @@ window.addEventListener("pageshow", updateNavigationPill);
 document.fonts?.ready.then(updateNavigationPill);
 
 initializeTheme();
+initializeViewMode();
 initializeYearFilter();
 buildSortOptions("discover");
 fillSelect(platformFilter, PLATFORM_OPTIONS, "All platforms");

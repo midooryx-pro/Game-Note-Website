@@ -17,7 +17,7 @@
   --border-strong: rgba(255, 255, 255, .17);
   --text: #f7f5fc;
   --muted: #a9a4b8;
-  --dim: #7a7589;
+  --dim: #8c869b;
   --purple: #9b72ff;
   --pink: #f16ab6;
   --green: #77e3b0;
@@ -30,9 +30,7 @@
   --field-bg: #0a0910;
   --cover-bg: #0a0910;
   --toast-bg: rgba(12, 11, 18, .94);
-  --overlay-bg: rgba(0, 0, 0, .58);
   --shadow: 0 22px 65px rgba(0, 0, 0, .65);
-  --radius: 22px;
 }
 
 body.light-theme {
@@ -44,7 +42,7 @@ body.light-theme {
   --border-strong: rgba(35, 25, 65, .2);
   --text: #211b2e;
   --muted: #655e73;
-  --dim: #898196;
+  --dim: #6f6880;
   --accent-text: #6b45d6;
   --glass-a: rgba(255, 255, 255, .85);
   --glass-b: rgba(255, 255, 255, .55);
@@ -52,7 +50,6 @@ body.light-theme {
   --field-bg: #fff;
   --cover-bg: #e4e0ef;
   --toast-bg: rgba(255, 255, 255, .96);
-  --overlay-bg: rgba(255, 255, 255, .7);
   --shadow: 0 20px 60px rgba(36, 24, 65, .1);
 }
 
@@ -220,7 +217,7 @@ body.light-theme .ambient {
 
 .brand-copy small {
   color: var(--dim);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .header-actions {
@@ -241,7 +238,7 @@ body.light-theme .ambient {
   border-radius: 13px;
   background: var(--surface-soft);
   color: var(--text);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 650;
   transition: background .2s ease, border-color .2s ease, transform .2s ease;
 }
@@ -299,7 +296,7 @@ body.light-theme .button-quiet {
 .eyebrow {
   margin: 0;
   color: var(--accent-text);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: .17em;
 }
@@ -324,16 +321,22 @@ body.light-theme .button-quiet {
   padding-right: .14em;
   font-size: clamp(44px, 5.5vw, 76px);
   font-weight: 820;
-  line-height: .99;
+  line-height: 1.04;
   letter-spacing: -.075em;
 }
 
-/* Extra paint room on the right so the final full stop is never clipped */
+/*
+  The gradient is only painted inside this box, and the text itself is transparent.
+  Extra room below keeps the tail of the "g" from being cut off,
+  and extra room on the right keeps the final full stop from being clipped.
+  The negative margins cancel the padding so the layout doesn't move.
+*/
 .gradient-text {
   display: inline-block;
-  padding: 0 .12em .1em 0;
-  margin: 0 -.12em -.1em 0;
+  padding: 0 .14em .24em 0;
+  margin: 0 -.14em -.24em 0;
   color: transparent;
+  -webkit-text-fill-color: transparent;
   background: linear-gradient(95deg, #b8a0ff 5%, #f18acb 58%, #f7b0d9 100%);
   -webkit-background-clip: text;
   background-clip: text;
@@ -377,7 +380,7 @@ body.light-theme .button-quiet {
 .stat-caption {
   margin: 7px 0 15px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .stat-divider {
@@ -392,7 +395,7 @@ body.light-theme .button-quiet {
   gap: 8px 10px;
   padding-top: 13px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .stat-split strong {
@@ -459,7 +462,7 @@ body.light-theme .nav-indicator {
   border-radius: 11px;
   background: transparent;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 650;
   white-space: nowrap;
   transition: color .2s ease;
@@ -472,14 +475,14 @@ body.light-theme .nav-indicator {
 
 .nav-count {
   display: inline-grid;
-  min-width: 19px;
-  height: 19px;
+  min-width: 20px;
+  height: 20px;
   padding: 0 5px;
   place-items: center;
   border-radius: 7px;
   background: rgba(255, 255, 255, .07);
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -521,7 +524,7 @@ body.light-theme .nav-count {
   outline: 0;
   background: transparent;
   color: var(--text);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .search-box input:focus-visible {
@@ -563,7 +566,7 @@ body.light-theme .nav-count {
 .filter-control > span {
   padding-left: 2px;
   color: var(--dim);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
 }
 
@@ -577,7 +580,7 @@ body.light-theme .nav-count {
   outline: 0;
   background: var(--field-bg);
   color: var(--text);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .filter-control select:focus-visible {
@@ -622,15 +625,56 @@ body.light-theme .nav-count {
 .feed-description {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.6;
 }
 
+.feed-tools {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
 .results-count {
-  margin: 0 0 4px;
+  margin: 0;
   color: var(--dim);
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
+}
+
+/* Grid / list switch */
+.view-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.view-toggle[hidden] {
+  display: none;
+}
+
+.view-button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 32px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--dim);
+  transition: background .18s ease, color .18s ease;
+}
+
+.view-button:hover {
+  color: var(--text);
+}
+
+.view-button[aria-pressed="true"] {
+  background: var(--surface-hover);
+  color: var(--text);
 }
 
 /* Bigger cards: change the 4 to 3 for even larger cards */
@@ -639,6 +683,29 @@ body.light-theme .nav-count {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: stretch;
   gap: 20px;
+}
+
+/* Section titles on the Discover mix */
+.gn-section-heading {
+  grid-column: 1 / -1;
+  margin-top: 16px;
+}
+
+.gn-section-heading:first-child {
+  margin-top: 0;
+}
+
+.gn-section-heading h3 {
+  margin: 0 0 4px;
+  font-size: 19px;
+  font-weight: 760;
+  letter-spacing: -.04em;
+}
+
+.gn-section-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 /* ==================== GAME CARDS ==================== */
@@ -674,6 +741,11 @@ body.light-theme .gn-game-card {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* Only shown in list view */
+.gn-index {
+  display: none;
 }
 
 .gn-cover-wrap {
@@ -783,6 +855,7 @@ body.light-theme .gn-game-card {
   border: 1px solid rgba(255, 255, 255, .18);
   border-radius: 11px;
   background: rgba(0, 0, 0, .6);
+  color: #fff;
   font-size: 12px;
   font-weight: 800;
   letter-spacing: .02em;
@@ -864,7 +937,7 @@ body.light-theme .gn-game-card {
 .gn-rating-chip {
   padding: 4px 9px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 750;
   white-space: nowrap;
 }
@@ -931,6 +1004,100 @@ body.light-theme .gn-button-primary {
   color: #5334a0;
 }
 
+/* ==================== LIST VIEW ==================== */
+
+.games-grid.is-list {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.games-grid.is-list > .gn-game-card {
+  display: grid;
+  grid-template-columns: 52px 210px minmax(0, 1fr) auto;
+  grid-template-rows: 1fr auto auto auto 1fr;
+  grid-template-areas:
+    "index cover .        actions"
+    "index cover title    actions"
+    "index cover subtitle actions"
+    "index cover meta     actions"
+    "index cover .        actions";
+  column-gap: 18px;
+  row-gap: 0;
+  padding: 12px 18px 12px 4px;
+  border-radius: 18px;
+}
+
+.games-grid.is-list > .gn-game-card:hover {
+  transform: translateY(-2px);
+}
+
+.games-grid.is-list .gn-index {
+  grid-area: index;
+  display: block;
+  align-self: center;
+  color: var(--dim);
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.games-grid.is-list .gn-cover-wrap {
+  grid-area: cover;
+  align-self: center;
+  border-radius: 13px;
+}
+
+.games-grid.is-list .gn-star {
+  top: 8px;
+  left: 8px;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  font-size: 15px;
+}
+
+.games-grid.is-list .gn-badge {
+  top: 8px;
+  right: 8px;
+  padding: 4px 8px;
+  border-radius: 9px;
+  font-size: 11px;
+}
+
+/* The content wrapper steps aside so its children join the row layout */
+.games-grid.is-list .gn-card-content {
+  display: contents;
+}
+
+.games-grid.is-list .gn-card-title {
+  grid-area: title;
+  min-height: 0;
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.games-grid.is-list .gn-card-subtitle {
+  grid-area: subtitle;
+  min-height: 0;
+  margin: 0 0 6px;
+}
+
+.games-grid.is-list .gn-card-meta {
+  grid-area: meta;
+  justify-content: flex-start;
+  gap: 12px;
+  min-height: 0;
+  margin-top: 0;
+}
+
+.games-grid.is-list .gn-card-actions {
+  grid-area: actions;
+  align-self: center;
+  width: 230px;
+  margin: 0;
+}
+
 /* ==================== EMPTY / LOADING STATES ==================== */
 
 .gn-message,
@@ -954,7 +1121,7 @@ body.light-theme .gn-button-primary {
 .gn-empty p {
   max-width: 520px;
   margin: 0 auto 16px;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.7;
 }
 
@@ -966,7 +1133,7 @@ body.light-theme .gn-button-primary {
   gap: 11px;
   min-height: 200px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .gn-spinner {
@@ -1036,7 +1203,7 @@ body.light-theme .gn-button-primary {
 
 #page-indicator {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1052,7 +1219,7 @@ body.light-theme .gn-button-primary {
   padding: 18px 2px 0;
   border-top: 1px solid var(--border);
   color: var(--dim);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .site-footer kbd {
@@ -1072,7 +1239,7 @@ body.light-theme .gn-button-primary {
   border: 0;
   background: none;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
   text-decoration: underline;
   text-decoration-color: var(--border-strong);
@@ -1140,7 +1307,7 @@ body.light-theme .gn-detail {
 .gn-detail-description {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.8;
   white-space: pre-line;
 }
@@ -1158,7 +1325,7 @@ body.light-theme .gn-detail {
   border-radius: 999px;
   background: var(--surface-soft);
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .gn-detail-facts {
@@ -1180,13 +1347,13 @@ body.light-theme .gn-detail {
   display: block;
   margin-bottom: 5px;
   color: var(--dim);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .gn-fact strong {
   display: block;
   overflow-wrap: anywhere;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -1221,7 +1388,7 @@ body.light-theme .gn-detail {
 .gn-muted {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.7;
 }
 
@@ -1235,7 +1402,7 @@ body.light-theme .gn-detail {
 .gn-rating-label {
   margin-right: 8px;
   color: var(--dim);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
 }
 
@@ -1271,7 +1438,7 @@ body.light-theme .gn-detail {
   outline: 0;
   background: var(--field-bg);
   color: var(--text);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.7;
   resize: vertical;
 }
@@ -1289,7 +1456,7 @@ body.light-theme .gn-detail {
   min-height: 15px;
   margin: 8px 2px 0;
   color: var(--dim);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .gn-screenshot-grid {
@@ -1318,10 +1485,25 @@ body.light-theme .gn-detail {
   transform: scale(1.04);
 }
 
+/* "Games you might also like" */
+.gn-similar-intro {
+  margin: -6px 0 16px;
+}
+
+.gn-similar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.gn-similar-grid .gn-loading {
+  min-height: 120px;
+}
+
 .gn-attribution {
   margin: 15px 0 0;
   color: var(--dim);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .gn-attribution a {
@@ -1350,7 +1532,7 @@ body.light-theme .gn-detail {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   color: var(--text);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
   opacity: 0;
   pointer-events: none;
@@ -1370,7 +1552,7 @@ body.light-theme .gn-detail {
   border-radius: 8px;
   background: rgba(139, 92, 246, .18);
   color: var(--accent-text);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -1384,11 +1566,19 @@ body.light-theme .gn-detail {
   .games-grid {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
+
+  .games-grid.is-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 1150px) {
   .games-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .games-grid.is-list {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .hero {
@@ -1416,6 +1606,19 @@ body.light-theme .gn-detail {
     gap: 14px;
   }
 
+  .games-grid.is-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .games-grid.is-list > .gn-game-card {
+    grid-template-columns: 40px 170px minmax(0, 1fr) auto;
+    column-gap: 14px;
+  }
+
+  .games-grid.is-list .gn-card-actions {
+    width: 200px;
+  }
+
   .gn-detail-top {
     grid-template-columns: minmax(0, 230px) minmax(0, 1fr);
     gap: 18px;
@@ -1428,6 +1631,49 @@ body.light-theme .gn-detail {
 
   .filter-control {
     flex-basis: 145px;
+  }
+}
+
+@media (max-width: 700px) {
+  /* List rows stack their buttons underneath on narrow screens */
+  .games-grid.is-list > .gn-game-card {
+    grid-template-columns: 32px 112px minmax(0, 1fr);
+    grid-template-rows: 1fr auto auto auto 1fr auto;
+    grid-template-areas:
+      "index cover ."
+      "index cover title"
+      "index cover subtitle"
+      "index cover meta"
+      "index cover ."
+      "actions actions actions";
+    column-gap: 12px;
+    padding: 12px;
+  }
+
+  .games-grid.is-list .gn-index {
+    font-size: 13px;
+  }
+
+  .games-grid.is-list .gn-card-title {
+    font-size: 14px;
+  }
+
+  .games-grid.is-list .gn-star {
+    top: 5px;
+    left: 5px;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+
+  .games-grid.is-list .gn-badge {
+    display: none;
+  }
+
+  .games-grid.is-list .gn-card-actions {
+    width: auto;
+    margin-top: 12px;
   }
 }
 
@@ -1475,7 +1721,7 @@ body.light-theme .gn-detail {
   .header-actions .button {
     min-height: 36px;
     padding: 8px;
-    font-size: 10px;
+    font-size: 11px;
   }
 
   #new-mix-btn {
@@ -1502,7 +1748,7 @@ body.light-theme .gn-detail {
   }
 
   .hero-description {
-    font-size: 12px;
+    font-size: 13px;
   }
 
   .library-stat {
@@ -1518,12 +1764,12 @@ body.light-theme .gn-detail {
     flex: 1;
     gap: 5px;
     padding: 0 6px;
-    font-size: 10px;
+    font-size: 11px;
   }
 
   .nav-count {
-    min-width: 17px;
-    height: 17px;
+    min-width: 18px;
+    height: 18px;
   }
 
   .search-box {
@@ -1544,7 +1790,7 @@ body.light-theme .gn-detail {
   }
 
   .filter-control select {
-    font-size: 10px;
+    font-size: 11px;
   }
 
   .reset-button {
@@ -1562,12 +1808,17 @@ body.light-theme .gn-detail {
 
   .feed-description {
     max-width: 300px;
-    font-size: 11px;
+    font-size: 12px;
+  }
+
+  .feed-tools {
+    flex-direction: column-reverse;
+    align-items: flex-end;
+    gap: 8px;
   }
 
   .results-count {
-    padding-top: 8px;
-    font-size: 10px;
+    font-size: 11px;
   }
 
   /* One big card per row on phones */
@@ -1611,7 +1862,7 @@ body.light-theme .gn-detail {
 
   .pagination .button {
     padding-inline: 9px;
-    font-size: 10px;
+    font-size: 11px;
   }
 
   .gn-notice {
